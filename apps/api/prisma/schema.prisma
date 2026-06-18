@@ -1,0 +1,216 @@
+// ============================================================
+// GroundedDesk — Prisma Schema
+// Multi-tenant data model with RLS support
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Tenant ──────────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  knowledgeSources KnowledgeSource[]
+  chunks           Chunk[]
+  conversations    Conversation[]
+  messages         Message[]
+  apiKeys          ApiKey[]
+  costLogs         CostLog[]
+
+  @@map("tenants")
+}
+
+// ── User ────────────────────────────────────────────────────
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  email     String
+  name      String?
+  role      UserRole @default(MEMBER)
+  avatar    String?
+  password  String?  // Null for OAuth-only users
+  provider  String?  // 'google', 'email', etc.
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ── Knowledge Source ────────────────────────────────────────
+
+enum SourceType {
+  PDF
+  DOCX
+  MARKDOWN
+  URL
+}
+
+enum SourceStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+model KnowledgeSource {
+  id           String       @id @default(uuid()) @db.Uuid
+  tenantId     String       @map("tenant_id") @db.Uuid
+  type         SourceType
+  name         String
+  status       SourceStatus @default(PENDING)
+  filePath     String?      @map("file_path")
+  url          String?
+  metadata     Json         @default("{}")
+  chunkCount   Int          @default(0) @map("chunk_count")
+  errorMessage String?      @map("error_message")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chunks Chunk[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("knowledge_sources")
+}
+
+// ── Chunk ───────────────────────────────────────────────────
+
+model Chunk {
+  id         String   @id @default(uuid()) @db.Uuid
+  sourceId   String   @map("source_id") @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  content    String
+  tokenCount Int      @map("token_count")
+  metadata   Json     @default("{}")
+  vectorId   String   @map("vector_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  source KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([sourceId])
+  @@index([vectorId])
+  @@map("chunks")
+}
+
+// ── Conversation ────────────────────────────────────────────
+
+enum ConversationStatus {
+  ACTIVE
+  RESOLVED
+  ESCALATED
+}
+
+model Conversation {
+  id          String             @id @default(uuid()) @db.Uuid
+  tenantId    String             @map("tenant_id") @db.Uuid
+  sessionId   String             @map("session_id")
+  visitorInfo Json               @default("{}") @map("visitor_info")
+  status      ConversationStatus @default(ACTIVE)
+  rating      Int?               // 1 = thumbs down, 5 = thumbs up
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages Message[]
+  costLogs CostLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([sessionId])
+  @@map("conversations")
+}
+
+// ── Message ─────────────────────────────────────────────────
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model Message {
+  id             String      @id @default(uuid()) @db.Uuid
+  conversationId String      @map("conversation_id") @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  role           MessageRole
+  content        String
+  citations      Json        @default("[]")
+  confidence     Float?
+  tokenCost      Float?      @map("token_cost")
+  latencyMs      Int?        @map("latency_ms")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([tenantId])
+  @@map("messages")
+}
+
+// ── API Key ─────────────────────────────────────────────────
+
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  name       String
+  keyHash    String    @map("key_hash")
+  keyPrefix  String    @map("key_prefix") // First 8 chars for display
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([keyHash])
+  @@map("api_keys")
+}
+
+// ── Cost Log ────────────────────────────────────────────────
+
+model CostLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  conversationId   String?  @map("conversation_id") @db.Uuid
+  model            String
+  promptTokens     Int      @map("prompt_tokens")
+  completionTokens Int      @map("completion_tokens")
+  totalCost        Float    @map("total_cost")
+  operation        String   @default("chat") // 'chat', 'embedding', 'eval'
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([conversationId])
+  @@map("cost_logs")
+}
