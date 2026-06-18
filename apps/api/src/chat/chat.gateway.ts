@@ -12,6 +12,7 @@ import { Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { AuthService } from '../auth/auth.service';
 import { TenantAwarePrismaService } from '../prisma/tenant-aware-prisma.service';
+import { ConfidenceService } from '../guardrail/confidence.service';
 
 interface AuthenticatedSocket extends Socket {
   tenantId?: string;
@@ -31,6 +32,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly chatService: ChatService,
     private readonly authService: AuthService,
     private readonly tenantAwarePrisma: TenantAwarePrismaService,
+    private readonly confidenceService: ConfidenceService,
   ) {}
 
   async handleConnection(client: AuthenticatedSocket) {
@@ -128,13 +130,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
 
       // If confidence is below threshold, suggest human handoff
-      if (completion.confidence < 0.6) {
+      const isLow = await this.confidenceService.isLowConfidence(client.tenantId, completion.confidence);
+      if (isLow) {
         client.emit('low-confidence', {
           message: 'I may not have the best answer for this. Would you like to speak with a human agent?',
           confidence: completion.confidence,
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error instanceof Error && error.message === 'PROMPT_INJECTION_DETECTED') {
+        client.emit('error', {
+          code: 'PROMPT_INJECTION',
+          message: 'Message blocked by security policies.',
+        });
+        return;
+      }
       this.logger.error(`Chat error for ${client.id}: ${error}`);
       client.emit('error', {
         code: 'CHAT_ERROR',

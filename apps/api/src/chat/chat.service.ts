@@ -4,6 +4,8 @@ import { RetrievalService, RetrievedChunk } from './retrieval.service';
 import { LlmService } from './llm.service';
 import { MessageRole } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
+import { InjectionFilter } from '../guardrail/injection-filter';
+import { PiiRedactor } from '../guardrail/pii-redactor';
 
 export interface ChatResult {
   conversationId: string;
@@ -26,6 +28,8 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly retrievalService: RetrievalService,
     private readonly llmService: LlmService,
+    private readonly injectionFilter: InjectionFilter,
+    private readonly piiRedactor: PiiRedactor,
   ) {}
 
   /**
@@ -40,6 +44,12 @@ export class ChatService {
     visitorInfo?: Record<string, any>,
   ): Promise<ChatResult> {
     const startTime = Date.now();
+
+    // Check for prompt injection
+    const isInjection = await this.injectionFilter.isInjection(userMessage);
+    if (isInjection) {
+      throw new Error('PROMPT_INJECTION_DETECTED');
+    }
 
     // Get or create conversation
     let conversation;
@@ -81,15 +91,18 @@ export class ChatService {
       take: 10,
     });
 
+    // Redact PII from user query and history before sending to LLM/embeddings
+    const redactedUserMessage = this.piiRedactor.redact(userMessage);
+
     const conversationHistory = history
       .filter((m) => m.role !== MessageRole.SYSTEM)
       .map((m) => ({
         role: m.role === MessageRole.USER ? 'user' as const : 'assistant' as const,
-        content: m.content,
+        content: m.role === MessageRole.USER ? this.piiRedactor.redact(m.content) : m.content,
       }));
 
     // Generate query embedding
-    const queryEmbedding = await this.llmService.embedQuery(userMessage);
+    const queryEmbedding = await this.llmService.embedQuery(redactedUserMessage);
 
     // Retrieve relevant chunks
     const rawChunks = await this.retrievalService.retrieve(tenantId, queryEmbedding, 5);
@@ -105,7 +118,7 @@ export class ChatService {
     const messageId = uuidv4();
     const { stream, getUsage } = await this.llmService.streamCompletion(
       systemPrompt,
-      userMessage,
+      redactedUserMessage,
       conversationHistory.slice(0, -1), // Exclude the just-added user message
     );
 
