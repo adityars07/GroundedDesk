@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { TenantModule } from './tenant/tenant.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { ChatModule } from './chat/chat.module';
+import { ObservabilityModule } from './observability/observability.module';
 import { TenantMiddleware } from './tenant/tenant.middleware';
 import { HealthController } from './health.controller';
 
@@ -19,6 +20,7 @@ import { HealthController } from './health.controller';
     TenantModule,
     KnowledgeModule,
     ChatModule,
+    ObservabilityModule,
   ],
   controllers: [HealthController],
 })

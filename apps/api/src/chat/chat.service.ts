@@ -6,6 +6,7 @@ import { MessageRole } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { InjectionFilter } from '../guardrail/injection-filter';
 import { PiiRedactor } from '../guardrail/pii-redactor';
+import { LangfuseService } from '../observability/langfuse.service';
 
 export interface ChatResult {
   conversationId: string;
@@ -30,6 +31,7 @@ export class ChatService {
     private readonly llmService: LlmService,
     private readonly injectionFilter: InjectionFilter,
     private readonly piiRedactor: PiiRedactor,
+    private readonly langfuseService: LangfuseService,
   ) {}
 
   /**
@@ -69,6 +71,14 @@ export class ChatService {
       });
     }
 
+    // Start Langfuse trace
+    const trace = this.langfuseService.createTrace({
+      name: 'chat-message',
+      userId: sessionId,
+      sessionId: conversation.id,
+      metadata: { tenantId },
+    });
+
     // Save user message
     await this.prisma.message.create({
       data: {
@@ -93,6 +103,14 @@ export class ChatService {
 
     // Redact PII from user query and history before sending to LLM/embeddings
     const redactedUserMessage = this.piiRedactor.redact(userMessage);
+
+    const generation = trace
+      ? trace.generation({
+          name: 'openai-completion',
+          model: 'gpt-4o',
+          input: redactedUserMessage,
+        })
+      : null;
 
     const conversationHistory = history
       .filter((m) => m.role !== MessageRole.SYSTEM)
@@ -169,6 +187,18 @@ export class ChatService {
             latencyMs,
           },
         });
+
+        // End generation trace
+        if (generation) {
+          generation.end({
+            output: cleanedResponse,
+            usage: {
+              promptTokens: usage.promptTokens,
+              completionTokens: usage.completionTokens,
+              totalTokens: usage.totalTokens,
+            },
+          });
+        }
 
         // Log cost
         await this.prisma.costLog.create({

@@ -12,16 +12,33 @@ import { tenantStorage, TenantContext } from '../prisma/tenant-aware-prisma.serv
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
   use(req: Request, _res: Response, next: NextFunction) {
-    const user = (req as any).user;
+    let tenantId = (req as any).user?.tenantId;
 
-    if (user?.tenantId) {
-      const context: TenantContext = { tenantId: user.tenantId };
+    if (!tenantId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        try {
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const base64Url = parts[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
+            const payload = JSON.parse(jsonPayload);
+            tenantId = payload.tenantId;
+          }
+        } catch {
+          // Let validation fail in AuthGuard
+        }
+      }
+    }
+
+    if (tenantId) {
+      const context: TenantContext = { tenantId };
       tenantStorage.run(context, () => {
         next();
       });
     } else {
-      // No tenant context — let the request proceed without RLS scoping.
-      // Protected routes will fail at the guard level, not here.
       next();
     }
   }
