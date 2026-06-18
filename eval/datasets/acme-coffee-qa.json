@@ -1,0 +1,27 @@
+[
+  {
+    "question": "What beans does Acme use for their signature espresso?",
+    "groundTruth": "Acme uses single-origin organic Ethiopian Yirgacheffe beans for their signature espresso.",
+    "expectedSource": "acme-product-guide.pdf"
+  },
+  {
+    "question": "What are the opening hours for the downtown shop?",
+    "groundTruth": "The downtown shop is open from 6:30 AM to 8:00 PM on weekdays, and 8:00 AM to 6:00 PM on weekends.",
+    "expectedSource": "acme-locations.pdf"
+  },
+  {
+    "question": "Do you offer free shipping on coffee beans?",
+    "groundTruth": "Yes, Acme offers free shipping on all coffee bean orders of $35 or more.",
+    "expectedSource": "acme-shipping-policy.md"
+  },
+  {
+    "question": "What is your return policy for open bags of coffee?",
+    "groundTruth": "Acme does not accept returns on open bags of coffee, but offers a 100% satisfaction guarantee with store credit or a replacement bag.",
+    "expectedSource": "acme-return-policy.md"
+  },
+  {
+    "question": "What temperature should I use to brew the Ethiopian coffee?",
+    "groundTruth": "For the Ethiopian Yirgacheffe, it is recommended to brew with water at 200°F (93°C) using a pour-over method.",
+    "expectedSource": "acme-brewing-guide.pdf"
+  }
+]

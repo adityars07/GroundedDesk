@@ -1,0 +1,22 @@
+[
+  {
+    "sourceName": "acme-product-guide.pdf",
+    "content": "Acme Coffee Co. signature espresso is handcrafted using single-origin organic Ethiopian Yirgacheffe beans. These beans are wet-processed and roasted to a medium-dark level to bring out the bright notes of lemon, jasmine, and honey, balanced by a rich chocolate undertone. Our espresso is served double-shot by default."
+  },
+  {
+    "sourceName": "acme-locations.pdf",
+    "content": "The downtown shop is located at 456 Main Street and is open from 6:30 AM to 8:00 PM on weekdays (Monday through Friday), and 8:00 AM to 6:00 PM on weekends (Saturday and Sunday). Holiday hours may vary, so check our social media channels for updates."
+  },
+  {
+    "sourceName": "acme-shipping-policy.md",
+    "content": "Acme Coffee Co. shipping policy: We offer free standard shipping on all coffee bean orders of $35 or more within the continental United States. Orders under $35 are charged a flat rate of $4.99. Orders are shipped via USPS Priority Mail and typically arrive in 2-3 business days."
+  },
+  {
+    "sourceName": "acme-return-policy.md",
+    "content": "Acme Coffee Co. return policy: We do not accept returns on open bags of coffee due to health and safety regulations. However, we offer a 100% satisfaction guarantee: if you don't love your coffee, contact us within 14 days of purchase for a full store credit or a replacement bag of equal value."
+  },
+  {
+    "sourceName": "acme-brewing-guide.pdf",
+    "content": "Acme Ethiopian Yirgacheffe brewing guide: To get the best notes from these delicate beans, we recommend a pour-over method (like V60 or Chemex). Use water at 200°F (93°C), which is about 30 seconds off-boil. Grind size should be medium-fine, resembling sea salt. Use a 1:16 coffee-to-water ratio."
+  }
+]
