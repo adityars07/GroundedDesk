@@ -84,7 +84,8 @@ export class ParseProcessor extends WorkerHost {
 
   private async parsePdf(filePath: string): Promise<string> {
     const buffer = await fs.readFile(filePath);
-    const data = await pdfParse(buffer);
+    const parse = typeof pdfParse === 'function' ? pdfParse : (pdfParse as any).default;
+    const data = await parse(buffer);
     return data.text;
   }
 

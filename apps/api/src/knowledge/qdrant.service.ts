@@ -41,8 +41,10 @@ export class QdrantService implements OnModuleInit {
         // Create payload index on tenant_id for fast filtering
         await this.client.createPayloadIndex(COLLECTION_NAME, {
           field_name: 'tenant_id',
-          field_schema: 'keyword',
-          is_tenant: true,
+          field_schema: {
+            type: 'keyword',
+            is_tenant: true,
+          } as any,
         });
 
         // Create payload index on source_id for deletion

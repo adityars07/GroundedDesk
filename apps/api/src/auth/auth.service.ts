@@ -146,7 +146,7 @@ export class AuthService {
         return { tenant, user: newUser };
       });
 
-      user = { ...result.user, tenant: result.tenant } as typeof user;
+      user = { ...result.user, tenant: result.tenant } as any;
     }
 
     const token = this.generateToken(user!);
