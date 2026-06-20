@@ -56,12 +56,65 @@ export class RetrievalService {
   }
 
   /**
-   * Simple reranker that filters out low-relevance chunks
-   * and re-sorts by a combination of relevance score and recency.
+   * Reranker that filters and re-sorts chunks.
+   * If COHERE_API_KEY is configured, uses Cohere's cross-encoder rerank-english-v3.0 model.
+   * Otherwise falls back to cosine similarity score sorting.
    */
-  rerank(chunks: RetrievedChunk[], minScore: number = 0.3): RetrievedChunk[] {
-    return chunks
-      .filter((chunk) => chunk.relevanceScore >= minScore)
-      .sort((a, b) => b.relevanceScore - a.relevanceScore);
+  async rerank(
+    query: string,
+    chunks: RetrievedChunk[],
+    minScore: number = 0.3,
+  ): Promise<RetrievedChunk[]> {
+    const apiKey = this.configService.get<string>('COHERE_API_KEY');
+
+    if (!apiKey || chunks.length === 0) {
+      // Fallback to cosine score sorting
+      return chunks
+        .filter((chunk) => chunk.relevanceScore >= minScore)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, 5); // Return top-5
+    }
+
+    try {
+      this.logger.log(`Running Cohere Reranker for ${chunks.length} chunks`);
+      const response = await fetch('https://api.cohere.ai/v1/rerank', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'rerank-english-v3.0',
+          query,
+          documents: chunks.map((c) => c.content),
+          top_n: 5,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Cohere API returned status ${response.status}`);
+      }
+
+      const data = (await response.json()) as any;
+      const results = data.results || [];
+
+      const reranked: RetrievedChunk[] = results
+        .map((res: any) => {
+          const chunk = chunks[res.index];
+          return {
+            ...chunk,
+            relevanceScore: res.relevance_score,
+          };
+        })
+        .filter((chunk: RetrievedChunk) => chunk.relevanceScore >= minScore);
+
+      return reranked;
+    } catch (err) {
+      this.logger.error(`Cohere Reranker failed: ${err}. Falling back to cosine sorting.`);
+      return chunks
+        .filter((chunk) => chunk.relevanceScore >= minScore)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, 5);
+    }
   }
 }

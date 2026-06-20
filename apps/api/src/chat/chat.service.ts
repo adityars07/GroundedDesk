@@ -124,9 +124,9 @@ export class ChatService {
     // Generate query embedding
     const queryEmbedding = await this.llmService.embedQuery(redactedUserMessage);
 
-    // Retrieve relevant chunks
-    const rawChunks = await this.retrievalService.retrieve(tenantId, queryEmbedding, 5);
-    const chunks = this.retrievalService.rerank(rawChunks);
+    // Retrieve relevant chunks (retrieve top-20 for reranker)
+    const rawChunks = await this.retrievalService.retrieve(tenantId, queryEmbedding, 20);
+    const chunks = await this.retrievalService.rerank(redactedUserMessage, rawChunks);
 
     // Build system prompt with context
     const systemPrompt = this.llmService.buildSystemPrompt(
