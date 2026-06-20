@@ -18,7 +18,7 @@ interface AgentViewProps {
 }
 
 export default function AgentView({ conversationId, onResolve }: AgentViewProps) {
-  const { data: session } = useSession();
+  const { data: session } = useSession() as any;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');

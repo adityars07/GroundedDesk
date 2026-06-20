@@ -75,6 +75,7 @@ enum SourceStatus {
   PROCESSING
   READY
   FAILED
+  ARCHIVED
 }
 
 model KnowledgeSource {
@@ -88,11 +89,16 @@ model KnowledgeSource {
   metadata     Json         @default("{}")
   chunkCount   Int          @default(0) @map("chunk_count")
   errorMessage String?      @map("error_message")
+  version      Int          @default(1)
+  previousVersionId String? @map("previous_version_id") @db.Uuid
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
 
   tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   chunks Chunk[]
+
+  previousVersion  KnowledgeSource?  @relation("SourceVersions", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions     KnowledgeSource[] @relation("SourceVersions")
 
   @@index([tenantId])
   @@index([tenantId, status])

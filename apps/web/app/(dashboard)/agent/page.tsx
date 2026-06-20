@@ -17,7 +17,7 @@ interface EscalatedConversation {
  * Clicking a conversation opens the live AgentView panel.
  */
 export default function AgentInboxPage() {
-  const { data: session } = useSession();
+  const { data: session } = useSession() as any;
   const [conversations, setConversations] = useState<EscalatedConversation[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

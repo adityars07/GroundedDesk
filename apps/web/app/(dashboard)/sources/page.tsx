@@ -374,7 +374,9 @@ export default function SourcesPage() {
                 {filteredSources.map((source) => (
                   <tr key={source.id} className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/10 group transition-all">
                     <td className="py-3.5 pr-4 font-semibold text-white truncate max-w-[200px]">
-                      {source.name}
+                      <Link href={`/sources/${source.id}`} className="hover:text-indigo-400 hover:underline transition-colors">
+                        {source.name}
+                      </Link>
                       {source.status === 'FAILED' && source.errorMessage && (
                         <span className="block text-[10px] text-red-400/90 font-normal mt-0.5 truncate max-w-[250px]">
                           {source.errorMessage}

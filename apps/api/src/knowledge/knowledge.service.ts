@@ -34,6 +34,40 @@ export class KnowledgeService {
       );
     }
 
+    // Check for existing source with same name (not archived)
+    const existing = await this.prisma.knowledgeSource.findFirst({
+      where: {
+        tenantId,
+        name: file.originalname,
+        status: { not: SourceStatus.ARCHIVED },
+      },
+      orderBy: { version: 'desc' },
+    });
+
+    let version = 1;
+    let previousVersionId: string | null = null;
+
+    if (existing) {
+      version = existing.version + 1;
+      previousVersionId = existing.id;
+
+      // 1. Archive the old source
+      await this.prisma.knowledgeSource.update({
+        where: { id: existing.id },
+        data: { status: SourceStatus.ARCHIVED },
+      });
+
+      // 2. Delete old Qdrant vectors
+      const chunks = await this.prisma.chunk.findMany({
+        where: { sourceId: existing.id, tenantId },
+        select: { vectorId: true },
+      });
+      if (chunks.length > 0) {
+        const vectorIds = chunks.map((c) => c.vectorId);
+        await this.qdrantService.deleteVectors(vectorIds);
+      }
+    }
+
     // Save file to local storage
     const uploadDir = path.join(process.cwd(), 'uploads', tenantId);
     await fs.mkdir(uploadDir, { recursive: true });
@@ -48,6 +82,8 @@ export class KnowledgeService {
         name: file.originalname,
         status: SourceStatus.PENDING,
         filePath,
+        version,
+        previousVersionId,
         metadata: {
           originalName: file.originalname,
           mimeType: file.mimetype,
@@ -72,13 +108,54 @@ export class KnowledgeService {
       throw new BadRequestException('URL is required');
     }
 
+    const sourceName = name || url;
+
+    // Check for existing source with same name or same url (not archived)
+    const existing = await this.prisma.knowledgeSource.findFirst({
+      where: {
+        tenantId,
+        OR: [
+          { url },
+          { name: sourceName },
+        ],
+        status: { not: SourceStatus.ARCHIVED },
+      },
+      orderBy: { version: 'desc' },
+    });
+
+    let version = 1;
+    let previousVersionId: string | null = null;
+
+    if (existing) {
+      version = existing.version + 1;
+      previousVersionId = existing.id;
+
+      // 1. Archive the old source
+      await this.prisma.knowledgeSource.update({
+        where: { id: existing.id },
+        data: { status: SourceStatus.ARCHIVED },
+      });
+
+      // 2. Delete old Qdrant vectors
+      const chunks = await this.prisma.chunk.findMany({
+        where: { sourceId: existing.id, tenantId },
+        select: { vectorId: true },
+      });
+      if (chunks.length > 0) {
+        const vectorIds = chunks.map((c) => c.vectorId);
+        await this.qdrantService.deleteVectors(vectorIds);
+      }
+    }
+
     const source = await this.prisma.knowledgeSource.create({
       data: {
         tenantId,
         type: SourceType.URL,
-        name: name || url,
+        name: sourceName,
         status: SourceStatus.PENDING,
         url,
+        version,
+        previousVersionId,
         metadata: { url },
       },
     });
@@ -96,6 +173,8 @@ export class KnowledgeService {
     const where: any = { tenantId };
     if (status) {
       where.status = status as SourceStatus;
+    } else {
+      where.status = { not: SourceStatus.ARCHIVED };
     }
 
     return this.prisma.knowledgeSource.findMany({
@@ -180,5 +259,23 @@ export class KnowledgeService {
     }
 
     return { deleted: true };
+  }
+
+  async getSourceHistory(tenantId: string, id: string) {
+    const source = await this.getSource(tenantId, id);
+
+    const where: any = {
+      tenantId,
+    };
+    if (source.type === SourceType.URL && source.url) {
+      where.url = source.url;
+    } else {
+      where.name = source.name;
+    }
+
+    return this.prisma.knowledgeSource.findMany({
+      where,
+      orderBy: { version: 'desc' },
+    });
   }
 }
