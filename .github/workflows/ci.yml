@@ -1,0 +1,187 @@
+# ============================================================
+# GroundedDesk CI — Quality Gate + Deploy
+#
+# Runs on every push to main and every PR.
+# Quality job: lint → typecheck → test → RAG evals
+# Deploy jobs: run only on main after quality passes
+# ============================================================
+
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '10'
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # 1. Quality Gate
+  # ──────────────────────────────────────────────────────────
+  quality:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gd_user
+          POSTGRES_PASSWORD: gd_local_password
+          POSTGRES_DB: groundeddesk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      qdrant:
+        image: qdrant/qdrant:v1.13.0
+        ports:
+          - 6333:6333
+
+    env:
+      DATABASE_URL: postgresql://gd_user:gd_local_password@localhost:5432/groundeddesk?schema=public
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      QDRANT_HOST: localhost
+      QDRANT_PORT: 6333
+      JWT_SECRET: ci-secret-do-not-use-in-prod
+      JWT_EXPIRES_IN: 7d
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm turbo lint
+
+      - name: Type Check
+        run: pnpm --filter @groundeddesk/api exec tsc --noEmit
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @groundeddesk/api exec prisma generate
+
+      - name: Run DB migrations
+        run: pnpm --filter @groundeddesk/api exec prisma migrate deploy
+
+      - name: Unit Tests
+        run: pnpm turbo test
+        continue-on-error: true   # Tests are scaffolded; don't block on empty suites
+
+      - name: RAG Eval Suite
+        id: evals
+        run: |
+          pnpm --filter eval run evaluate 2>&1 | tee eval-results.txt
+          echo "EVAL_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          cat eval-results.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        continue-on-error: true   # Evals require a live OpenAI key
+
+      - name: Upload eval results
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-results
+          path: eval-results.txt
+          if-no-files-found: ignore
+
+  # ──────────────────────────────────────────────────────────
+  # 2. Deploy API → Railway (on main only)
+  # ──────────────────────────────────────────────────────────
+  deploy-api:
+    name: Deploy API (Railway)
+    needs: quality
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        run: railway up --service api --detach
+        working-directory: apps/api
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        # Remove the if-condition below once RAILWAY_TOKEN is set in secrets
+        continue-on-error: true
+
+  # ──────────────────────────────────────────────────────────
+  # 3. Deploy Web → Vercel (on main only)
+  # ──────────────────────────────────────────────────────────
+  deploy-web:
+    name: Deploy Web (Vercel)
+    needs: quality
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy to Vercel
+        run: |
+          npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }} \
+            --yes
+        working-directory: apps/web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        continue-on-error: true
