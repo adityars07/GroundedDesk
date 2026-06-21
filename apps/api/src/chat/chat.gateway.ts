@@ -127,6 +127,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Emit conversation ID immediately
       client.emit('conversation', { conversationId: result.conversationId });
 
+      // Join the conversation room so client receives broadcasts
+      await client.join(`conv:${result.conversationId}`);
+
       // Stream tokens to the client
       let tokenIndex = 0;
       for await (const token of result.stream) {
@@ -149,6 +152,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         confidence: completion.confidence,
         latencyMs: completion.latencyMs,
       });
+
+      // Handle pending tool calls requiring agent approval
+      if (completion.pendingToolCalls) {
+        client.emit('tool-call-pending', {
+          conversationId: result.conversationId,
+          toolCalls: completion.pendingToolCalls,
+        });
+
+        this.agentGateway.server.to(`conv:${result.conversationId}`).emit('tool-call-pending', {
+          conversationId: result.conversationId,
+          toolCalls: completion.pendingToolCalls,
+        });
+      }
 
       // If confidence is below threshold, suggest human handoff
       const isLow = await this.confidenceService.isLowConfidence(client.tenantId, completion.confidence);

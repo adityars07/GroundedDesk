@@ -7,6 +7,12 @@ export interface LlmUsage {
   totalTokens: number;
 }
 
+export interface LlmToolCall {
+  id: string;
+  name: string;
+  arguments: string; // JSON string representation
+}
+
 /**
  * The streaming result returned by every provider's streamCompletion call.
  * The stream yields raw text deltas; getUsage() resolves once the stream
@@ -19,6 +25,8 @@ export interface LlmStreamResult {
   providerName: string;
   /** Which model was used (for cost tracking). */
   modelName: string;
+  /** Optional list of tool calls requested by the model. */
+  toolCalls?: LlmToolCall[];
 }
 
 /**
@@ -36,6 +44,7 @@ export interface StreamCompletionOptions {
   temperature?: number;
   maxTokens?: number;
   attachments?: Array<{ name: string; url: string; mimeType: string }>;
+  tools?: any[]; // The tool definitions to pass to the LLM
 }
 
 /**

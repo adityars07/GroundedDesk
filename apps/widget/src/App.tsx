@@ -140,6 +140,42 @@ export default function App() {
       },
     );
 
+    socketInstance.on('tool-call-pending', (data: { toolCalls: any[] }) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `pending-tool-${Date.now()}`,
+          role: 'assistant',
+          content: `AI wants to execute: ${data.toolCalls.map(tc => tc.name).join(', ')}. Waiting for agent approval...`,
+        },
+      ]);
+      setIsSending(false);
+    });
+
+    socketInstance.on('tool-call-approved', () => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `approved-tool-${Date.now()}`,
+          role: 'assistant',
+          content: `✓ Action approved. Executing...`,
+        },
+      ]);
+      setIsSending(true);
+    });
+
+    socketInstance.on('tool-call-rejected', () => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `rejected-tool-${Date.now()}`,
+          role: 'assistant',
+          content: `✗ Action rejected by agent.`,
+        },
+      ]);
+      setIsSending(false);
+    });
+
     socketInstance.on('low-confidence', () => {
       setHumanHandoffOffered(true);
     });
@@ -433,6 +469,9 @@ export default function App() {
                 </p>
                 <button
                   onClick={() => {
+                    if (socket && conversationId) {
+                      socket.emit('escalate', { conversationId });
+                    }
                     alert('Handoff triggered! A human support representative has been alerted.');
                     setHumanHandoffOffered(false);
                   }}

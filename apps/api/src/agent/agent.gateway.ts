@@ -8,12 +8,14 @@ import {
   WebSocketServer,
   WsException,
 } from '@nestjs/websockets';
-import { Logger, UseGuards } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantAwarePrismaService } from '../prisma/tenant-aware-prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { MessageRole, ConversationStatus } from '@prisma/client';
+import { ChatService } from '../chat/chat.service';
+import { ToolExecutorService } from '../chat/tools/tool-executor.service';
 
 interface AgentSocket extends Socket {
   tenantId?: string;
@@ -53,6 +55,10 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
     private readonly tenantAwarePrisma: TenantAwarePrismaService,
+    @Inject(forwardRef(() => ChatService))
+    private readonly chatService: ChatService,
+    @Inject(forwardRef(() => ToolExecutorService))
+    private readonly toolExecutor: ToolExecutorService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -218,6 +224,172 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .emit('conversation-resolved', { conversationId: data.conversationId });
 
     this.logger.log(`Agent ${client.agentName} resolved conversation ${data.conversationId}`);
+  }
+
+  /**
+   * Agent approves a pending tool call.
+   * Executes the tool, saves results, emits approval, and resumes the LLM stream.
+   */
+  @SubscribeMessage('approve-tool-call')
+  async handleApproveToolCall(
+    @MessageBody() data: { conversationId: string; messageId: string; toolCallId: string; name: string; arguments: any },
+    @ConnectedSocket() client: AgentSocket,
+  ) {
+    if (!client.tenantId || !client.agentId) {
+      throw new WsException('Not authenticated');
+    }
+
+    this.logger.log(`Agent approved tool call ${data.name} for conversation ${data.conversationId}`);
+
+    // Update the pending tool call message in the database
+    await this.tenantAwarePrisma.withExplicitTenant(client.tenantId, async (prisma) => {
+      const message = await prisma.message.findFirst({
+        where: {
+          conversationId: data.conversationId,
+          content: { startsWith: 'PENDING_TOOL_CALL:' },
+        },
+      });
+      if (message) {
+        await prisma.message.update({
+          where: { id: message.id },
+          data: {
+            content: message.content.replace('PENDING_TOOL_CALL:', 'APPROVED_TOOL_CALL:'),
+          },
+        });
+      }
+    });
+
+    // Execute the tool
+    const result = await this.toolExecutor.executeTool(data.name, data.arguments, client.tenantId, data.conversationId);
+
+    // Save result as SYSTEM message
+    await this.tenantAwarePrisma.withExplicitTenant(client.tenantId, async (prisma) => {
+      await prisma.message.create({
+        data: {
+          conversationId: data.conversationId,
+          tenantId: client.tenantId!,
+          role: MessageRole.SYSTEM,
+          content: `TOOL_CALL_RESULT:${JSON.stringify({ id: data.toolCallId, name: data.name, result })}`,
+        },
+      });
+    });
+
+    // Broadcast approval event to all clients in conversation room (widget + dashboard)
+    this.server.to(`conv:${data.conversationId}`).emit('tool-call-approved', {
+      conversationId: data.conversationId,
+      toolCallId: data.toolCallId,
+      result,
+    });
+
+    // Continue the conversation and stream the final answer
+    const chatResult = await this.chatService.continueConversation(
+      client.tenantId,
+      data.conversationId,
+    );
+
+    let tokenIndex = 0;
+    for await (const token of chatResult.stream) {
+      this.server.to(`conv:${data.conversationId}`).emit('token', {
+        text: token,
+        index: tokenIndex++,
+        conversationId: data.conversationId,
+      });
+    }
+
+    const completion = await chatResult.onComplete();
+    this.server.to(`conv:${data.conversationId}`).emit('done', {
+      messageId: chatResult.messageId,
+      conversationId: chatResult.conversationId,
+      citations: completion.citations.map((c) => ({
+        chunkId: c.chunkId,
+        sourceId: c.sourceId,
+        sourceName: c.sourceName,
+        content: c.content.substring(0, 200),
+        relevanceScore: c.relevanceScore,
+      })),
+      confidence: completion.confidence,
+    });
+  }
+
+  /**
+   * Agent rejects a pending tool call.
+   * Saves rejection, emits event, and resumes LLM stream.
+   */
+  @SubscribeMessage('reject-tool-call')
+  async handleRejectToolCall(
+    @MessageBody() data: { conversationId: string; messageId: string; toolCallId: string; name: string },
+    @ConnectedSocket() client: AgentSocket,
+  ) {
+    if (!client.tenantId || !client.agentId) {
+      throw new WsException('Not authenticated');
+    }
+
+    this.logger.log(`Agent rejected tool call ${data.name} for conversation ${data.conversationId}`);
+
+    // Update the pending tool call message in the database
+    await this.tenantAwarePrisma.withExplicitTenant(client.tenantId, async (prisma) => {
+      const message = await prisma.message.findFirst({
+        where: {
+          conversationId: data.conversationId,
+          content: { startsWith: 'PENDING_TOOL_CALL:' },
+        },
+      });
+      if (message) {
+        await prisma.message.update({
+          where: { id: message.id },
+          data: {
+            content: message.content.replace('PENDING_TOOL_CALL:', 'REJECTED_TOOL_CALL:'),
+          },
+        });
+      }
+    });
+
+    // Save rejection as SYSTEM message
+    await this.tenantAwarePrisma.withExplicitTenant(client.tenantId, async (prisma) => {
+      await prisma.message.create({
+        data: {
+          conversationId: data.conversationId,
+          tenantId: client.tenantId!,
+          role: MessageRole.SYSTEM,
+          content: `Tool execution rejected by agent: ${data.name}`,
+        },
+      });
+    });
+
+    // Broadcast rejection event to all clients in conversation room (widget + dashboard)
+    this.server.to(`conv:${data.conversationId}`).emit('tool-call-rejected', {
+      conversationId: data.conversationId,
+      toolCallId: data.toolCallId,
+    });
+
+    // Continue the conversation and stream the response
+    const chatResult = await this.chatService.continueConversation(
+      client.tenantId,
+      data.conversationId,
+    );
+
+    let tokenIndex = 0;
+    for await (const token of chatResult.stream) {
+      this.server.to(`conv:${data.conversationId}`).emit('token', {
+        text: token,
+        index: tokenIndex++,
+        conversationId: data.conversationId,
+      });
+    }
+
+    const completion = await chatResult.onComplete();
+    this.server.to(`conv:${data.conversationId}`).emit('done', {
+      messageId: chatResult.messageId,
+      conversationId: chatResult.conversationId,
+      citations: completion.citations.map((c) => ({
+        chunkId: c.chunkId,
+        sourceId: c.sourceId,
+        sourceName: c.sourceName,
+        content: c.content.substring(0, 200),
+        relevanceScore: c.relevanceScore,
+      })),
+      confidence: completion.confidence,
+    });
   }
 
   // ---------------------------------------------------------------------------

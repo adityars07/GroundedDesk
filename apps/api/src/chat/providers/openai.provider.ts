@@ -6,6 +6,7 @@ import {
   LlmStreamResult,
   ConversationTurn,
   StreamCompletionOptions,
+  LlmToolCall,
 } from './llm-provider.interface';
 import { getAttachmentBase64 } from '../../common/utils/attachment';
 
@@ -74,27 +75,74 @@ export class OpenAIProvider implements ILlmProvider {
       { role: 'user', content: userContent },
     ];
 
-    const oaiStream = await this.client.chat.completions.create({
+    const requestParams: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
       model: this.chatModel,
       messages,
-      stream: true,
+      stream: true as const,
       stream_options: { include_usage: true },
       temperature: options.temperature ?? 0.1,
       max_tokens: options.maxTokens ?? 1024,
-    });
+    };
+
+    if (options.tools && options.tools.length > 0) {
+      requestParams.tools = options.tools.map((t) => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }));
+    }
+
+    const oaiStream = await this.client.chat.completions.create(requestParams);
 
     let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const accumulatedToolCalls: any[] = [];
+    const finalToolCalls: LlmToolCall[] = [];
 
     const textStream = async function* () {
       for await (const chunk of oaiStream) {
-        const content = chunk.choices?.[0]?.delta?.content;
-        if (content) yield content;
+        const delta = chunk.choices?.[0]?.delta;
+        if (delta?.content) {
+          yield delta.content;
+        }
+
+        if (delta?.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const index = tc.index;
+            if (!accumulatedToolCalls[index]) {
+              accumulatedToolCalls[index] = {
+                id: tc.id || '',
+                name: tc.function?.name || '',
+                arguments: '',
+              };
+            }
+            if (tc.id) accumulatedToolCalls[index].id = tc.id;
+            if (tc.function?.name) accumulatedToolCalls[index].name = tc.function.name;
+            if (tc.function?.arguments) {
+              accumulatedToolCalls[index].arguments += tc.function.arguments;
+            }
+          }
+        }
+
         if (chunk.usage) {
           usage = {
             promptTokens: chunk.usage.prompt_tokens,
             completionTokens: chunk.usage.completion_tokens,
             totalTokens: chunk.usage.total_tokens,
           };
+        }
+      }
+
+      // Populate final tool calls after the stream completes
+      for (const tc of accumulatedToolCalls) {
+        if (tc) {
+          finalToolCalls.push({
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments,
+          });
         }
       }
     };
@@ -105,6 +153,7 @@ export class OpenAIProvider implements ILlmProvider {
       getUsage: async () => usage,
       providerName: this.providerName,
       modelName,
+      toolCalls: finalToolCalls,
     };
   }
 }

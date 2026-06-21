@@ -6,6 +6,7 @@ import {
   LlmStreamResult,
   ConversationTurn,
   StreamCompletionOptions,
+  LlmToolCall,
 } from './llm-provider.interface';
 import { OpenAIProvider } from './openai.provider';
 import { getAttachmentBase64 } from '../../common/utils/attachment';
@@ -72,16 +73,29 @@ export class AnthropicProvider implements ILlmProvider {
       { role: 'user', content: userContent },
     ];
 
-    const anthropicStream = this.client.messages.stream({
+    const requestParams: Anthropic.MessageCreateParamsStreaming = {
       model: this.model,
       system: systemPrompt,
       messages,
       max_tokens: options.maxTokens ?? 1024,
       temperature: options.temperature ?? 0.1,
-    });
+      stream: true,
+    };
+
+    if (options.tools && options.tools.length > 0) {
+      requestParams.tools = options.tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.parameters,
+      }));
+    }
+
+    const anthropicStream = this.client.messages.stream(requestParams);
 
     let inputTokens = 0;
     let outputTokens = 0;
+    const accumulatedToolCalls: any[] = [];
+    const finalToolCalls: LlmToolCall[] = [];
 
     const textStream = async function* () {
       for await (const event of anthropicStream) {
@@ -91,11 +105,35 @@ export class AnthropicProvider implements ILlmProvider {
         ) {
           yield event.delta.text;
         }
+
+        if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+          accumulatedToolCalls[event.index] = {
+            id: event.content_block.id,
+            name: event.content_block.name,
+            arguments: '',
+          };
+        }
+
+        if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta') {
+          accumulatedToolCalls[event.index].arguments += event.delta.partial_json;
+        }
+
         if (event.type === 'message_delta' && event.usage) {
           outputTokens = event.usage.output_tokens;
         }
         if (event.type === 'message_start' && event.message.usage) {
           inputTokens = event.message.usage.input_tokens;
+        }
+      }
+
+      // Populate final tool calls after the stream completes
+      for (const tc of accumulatedToolCalls) {
+        if (tc) {
+          finalToolCalls.push({
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments,
+          });
         }
       }
     };
@@ -110,6 +148,7 @@ export class AnthropicProvider implements ILlmProvider {
       }),
       providerName: this.providerName,
       modelName,
+      toolCalls: finalToolCalls,
     };
   }
 }
