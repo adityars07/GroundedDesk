@@ -8,6 +8,7 @@ import {
   StreamCompletionOptions,
 } from './llm-provider.interface';
 import { OpenAIProvider } from './openai.provider';
+import { getAttachmentBase64 } from '../../common/utils/attachment';
 
 /**
  * Anthropic (Claude) LLM provider.
@@ -44,9 +45,31 @@ export class AnthropicProvider implements ILlmProvider {
     history: ConversationTurn[] = [],
     options: StreamCompletionOptions = {},
   ): Promise<LlmStreamResult> {
+    const userContent: Anthropic.ContentBlockParam[] = [
+      { type: 'text', text: userMessage }
+    ];
+
+    if (options.attachments && options.attachments.length > 0) {
+      for (const att of options.attachments) {
+        if (att.mimeType.startsWith('image/')) {
+          const base64 = await getAttachmentBase64(att.url);
+          if (base64) {
+            userContent.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: base64.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                data: base64.data,
+              },
+            });
+          }
+        }
+      }
+    }
+
     const messages: Anthropic.MessageParam[] = [
       ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-      { role: 'user', content: userMessage },
+      { role: 'user', content: userContent },
     ];
 
     const anthropicStream = this.client.messages.stream({

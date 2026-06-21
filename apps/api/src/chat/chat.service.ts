@@ -46,6 +46,7 @@ export class ChatService {
     userMessage: string,
     conversationId?: string,
     visitorInfo?: Record<string, any>,
+    attachments?: Array<{ name: string; url: string; mimeType: string }>,
   ): Promise<ChatResult> {
     const startTime = Date.now();
 
@@ -88,6 +89,7 @@ export class ChatService {
         tenantId,
         role: MessageRole.USER,
         content: userMessage,
+        attachments: attachments || [],
       },
     });
 
@@ -141,6 +143,7 @@ export class ChatService {
       redactedUserMessage,
       conversationHistory.slice(0, -1), // Exclude the just-added user message
       tenant?.settings,
+      { attachments },
     );
 
     let fullResponse = '';

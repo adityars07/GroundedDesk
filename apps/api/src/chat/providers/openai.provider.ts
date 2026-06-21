@@ -7,6 +7,7 @@ import {
   ConversationTurn,
   StreamCompletionOptions,
 } from './llm-provider.interface';
+import { getAttachmentBase64 } from '../../common/utils/attachment';
 
 /**
  * OpenAI LLM provider.
@@ -47,10 +48,30 @@ export class OpenAIProvider implements ILlmProvider {
     history: ConversationTurn[] = [],
     options: StreamCompletionOptions = {},
   ): Promise<LlmStreamResult> {
+    const userContent: OpenAI.Chat.ChatCompletionContentPart[] = [
+      { type: 'text', text: userMessage }
+    ];
+
+    if (options.attachments && options.attachments.length > 0) {
+      for (const att of options.attachments) {
+        if (att.mimeType.startsWith('image/')) {
+          const base64 = await getAttachmentBase64(att.url);
+          if (base64) {
+            userContent.push({
+              type: 'image_url',
+              image_url: {
+                url: `data:${base64.mimeType};base64,${base64.data}`,
+              },
+            });
+          }
+        }
+      }
+    }
+
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
       ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-      { role: 'user', content: userMessage },
+      { role: 'user', content: userContent },
     ];
 
     const oaiStream = await this.client.chat.completions.create({

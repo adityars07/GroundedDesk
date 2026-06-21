@@ -93,7 +93,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('message')
   async handleMessage(
-    @MessageBody() data: { text: string; conversationId?: string },
+    @MessageBody() data: { text: string; conversationId?: string; attachments?: Array<{ name: string; url: string; mimeType: string }> },
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
     if (!client.tenantId) {
@@ -119,6 +119,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           userAgent: client.handshake.headers['user-agent'],
           ip: client.handshake.address,
         },
+        data.attachments,
       );
 
       // Emit conversation ID immediately

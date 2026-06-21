@@ -10,6 +10,8 @@ import {
   AlertCircle,
   Link as LinkIcon,
   Shield,
+  Paperclip,
+  FileText,
 } from 'lucide-react';
 
 interface Citation {
@@ -20,11 +22,18 @@ interface Citation {
   relevanceScore: number;
 }
 
+export interface Attachment {
+  name: string;
+  url: string;
+  mimeType: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'error';
   content: string;
   citations?: Citation[];
+  attachments?: Attachment[];
   rating?: number;
   messageId?: string;
 }
@@ -38,6 +47,12 @@ export default function App() {
   const [streamingMessage, setStreamingMessage] = useState<string>('');
   const [isSending, setIsSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  
+  // File Upload State
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const apiKeyRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Tenant Settings (from backend validation response)
   const [widgetColor, setWidgetColor] = useState('#6366f1');
@@ -63,6 +78,8 @@ export default function App() {
       console.warn('GroundedDesk widget: data-api-key attribute not found on script tag.');
       return;
     }
+
+    apiKeyRef.current = apiKey;
 
     // 2. Connect to WebSocket chat namespace
     const socketUrl = 'http://localhost:3000/chat';
@@ -152,12 +169,58 @@ export default function App() {
     };
   }, []);
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    
+    const apiKey = apiKeyRef.current;
+    if (!apiKey) {
+      console.error('Cannot upload, API key not found');
+      return;
+    }
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('http://localhost:3000/api/storage/upload', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text() || 'Failed to upload file');
+      }
+
+      const data = await res.json() as Attachment;
+      setPendingAttachments((prev) => [...prev, data]);
+    } catch (err) {
+      console.error('Upload failed:', err);
+      alert('Upload failed: ' + (err as Error).message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const removePendingAttachment = (index: number) => {
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || isSending || !socket) return;
+    if ((!inputText.trim() && pendingAttachments.length === 0) || isSending || !socket) return;
 
     const userMsg = inputText.trim();
+    const currentAttachments = [...pendingAttachments];
     setInputText('');
+    setPendingAttachments([]);
     setIsSending(true);
     setStreamingMessage('');
 
@@ -168,6 +231,7 @@ export default function App() {
         id: `user-${Date.now()}`,
         role: 'user',
         content: userMsg,
+        attachments: currentAttachments,
       },
     ]);
 
@@ -175,6 +239,7 @@ export default function App() {
     socket.emit('message', {
       text: userMsg,
       conversationId: conversationId || undefined,
+      attachments: currentAttachments,
     });
   };
 
@@ -266,6 +331,37 @@ export default function App() {
                     {isError && <AlertCircle className="w-4 h-4 text-red-400 mb-1" />}
                     <p className="whitespace-pre-wrap">{msg.content}</p>
 
+                    {/* Attachments rendering */}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="mt-2.5 space-y-2">
+                        {msg.attachments.map((att, idx) => {
+                          const isImg = att.mimeType.startsWith('image/');
+                          return (
+                            <div key={idx} className="rounded-lg overflow-hidden border border-slate-800 bg-slate-950 max-w-[200px]">
+                              {isImg ? (
+                                <img
+                                  src={att.url}
+                                  alt={att.name}
+                                  className="w-full h-auto max-h-[150px] object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                  onClick={() => window.open(att.url, '_blank')}
+                                />
+                              ) : (
+                                <a
+                                  href={att.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-2 flex items-center gap-2 text-[10px] text-slate-300 hover:text-white no-underline"
+                                >
+                                  <FileText className="w-4 h-4 shrink-0 text-indigo-400" />
+                                  <span className="truncate">{att.name}</span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {/* Citations list */}
                     {!isUser && msg.citations && msg.citations.length > 0 && (
                       <div className="mt-3 pt-2.5 border-t border-slate-800/60 space-y-1.5">
@@ -351,11 +447,53 @@ export default function App() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Pending Attachments List */}
+          {pendingAttachments.length > 0 && (
+            <div className="px-4 py-2 bg-slate-900/60 border-t border-slate-800/50 flex flex-wrap gap-2 shrink-0">
+              {pendingAttachments.map((att, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-950 border border-slate-800 rounded-lg text-[10px]">
+                  {att.mimeType.startsWith('image/') ? (
+                    <img src={att.url} alt={att.name} className="w-5 h-5 rounded object-cover" />
+                  ) : (
+                    <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                  )}
+                  <span className="truncate max-w-[100px] text-slate-300">{att.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removePendingAttachment(i)}
+                    className="text-slate-500 hover:text-white border-0 bg-transparent p-0 cursor-pointer flex items-center justify-center"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Form Input Footer */}
           <form
             onSubmit={handleSend}
             className="h-16 px-4 border-t border-slate-800 bg-slate-900/40 flex items-center gap-2 shrink-0"
           >
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              style={{ display: 'none' }}
+              onChange={handleFileChange}
+              ref={fileInputRef}
+            />
+            <button
+              type="button"
+              disabled={isUploading || isSending || !connected}
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 bg-slate-950 border border-slate-800 rounded-xl hover:bg-slate-900 transition-colors cursor-pointer border-0 active:scale-95 disabled:opacity-50 text-slate-400 hover:text-slate-200"
+            >
+              {isUploading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Paperclip className="w-3.5 h-3.5" />
+              )}
+            </button>
             <input
               type="text"
               value={inputText}
@@ -366,8 +504,8 @@ export default function App() {
             />
             <button
               type="submit"
-              disabled={!inputText.trim() || isSending || !connected}
-              style={{ backgroundColor: inputText.trim() && !isSending && connected ? widgetColor : '#1e293b' }}
+              disabled={(!inputText.trim() && pendingAttachments.length === 0) || isSending || !connected}
+              style={{ backgroundColor: (inputText.trim() || pendingAttachments.length > 0) && !isSending && connected ? widgetColor : '#1e293b' }}
               className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 hover:scale-105 duration-150 cursor-pointer border-0 active:scale-95 disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />

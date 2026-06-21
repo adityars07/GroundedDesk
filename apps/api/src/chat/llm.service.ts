@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAIProvider } from './providers/openai.provider';
 import { AnthropicProvider } from './providers/anthropic.provider';
-import { ILlmProvider, LlmStreamResult, ConversationTurn } from './providers/llm-provider.interface';
+import { ILlmProvider, LlmStreamResult, ConversationTurn, StreamCompletionOptions } from './providers/llm-provider.interface';
 import { RetrievedChunk } from './retrieval.service';
 
 // Re-export for consumers still importing from llm.service
@@ -85,6 +85,7 @@ export class LlmService {
     userMessage: string,
     history: ConversationTurn[] = [],
     tenantSettings?: any,
+    options?: StreamCompletionOptions,
   ): Promise<LlmStreamResult> {
     const primaryKey: string = tenantSettings?.llmProvider ?? this.defaultPrimary;
     const fallbackKey: string | null = tenantSettings?.fallbackProvider ?? this.defaultFallback;
@@ -92,7 +93,7 @@ export class LlmService {
     const primary = this.resolveProvider(primaryKey);
 
     try {
-      const result = await primary.streamCompletion(systemPrompt, userMessage, history);
+      const result = await primary.streamCompletion(systemPrompt, userMessage, history, options);
       this.logger.log(`Using primary provider: ${primaryKey}`);
       return result;
     } catch (primaryErr: any) {
@@ -106,7 +107,7 @@ export class LlmService {
 
       const fallback = this.resolveProvider(fallbackKey);
       this.logger.log(`Falling back to provider: ${fallbackKey}`);
-      return fallback.streamCompletion(systemPrompt, userMessage, history);
+      return fallback.streamCompletion(systemPrompt, userMessage, history, options);
     }
   }
 

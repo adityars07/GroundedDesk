@@ -8,6 +8,7 @@ import { ChatModule } from './chat/chat.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { AgentModule } from './agent/agent.module';
 import { BillingModule } from './billing/billing.module';
+import { StorageModule } from './storage/storage.module';
 import { TenantMiddleware } from './tenant/tenant.middleware';
 import { HealthController } from './health.controller';
 
@@ -25,6 +26,7 @@ import { HealthController } from './health.controller';
     ObservabilityModule,
     AgentModule,
     BillingModule,
+    StorageModule,
   ],
   controllers: [HealthController],
 })

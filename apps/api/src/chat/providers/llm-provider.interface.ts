@@ -35,6 +35,7 @@ export interface ConversationTurn {
 export interface StreamCompletionOptions {
   temperature?: number;
   maxTokens?: number;
+  attachments?: Array<{ name: string; url: string; mimeType: string }>;
 }
 
 /**
