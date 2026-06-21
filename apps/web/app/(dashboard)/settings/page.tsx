@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiRequest } from '../../lib/api';
 import {
   Settings,
@@ -56,7 +56,7 @@ export default function SettingsPage() {
   // Widget Copy State
   const [copiedEmbedCode, setCopiedEmbedCode] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -72,16 +72,20 @@ export default function SettingsPage() {
       // Load API Keys
       const keys = await apiRequest('/auth/api-keys');
       setApiKeys(keys);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load settings.');
+    } catch (err) {
+      const errorVal = err as Error;
+      setError(errorVal.message || 'Failed to load settings.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    Promise.resolve().then(() => {
+      loadData();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadData]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,8 +107,9 @@ export default function SettingsPage() {
       });
       setSuccessMsg('Settings saved successfully!');
       setTimeout(() => setSuccessMsg(''), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to save settings.');
+    } catch (err) {
+      const errorVal = err as Error;
+      setError(errorVal.message || 'Failed to save settings.');
     } finally {
       setSaving(false);
     }
@@ -130,8 +135,9 @@ export default function SettingsPage() {
       // Reload keys
       const keys = await apiRequest('/auth/api-keys');
       setApiKeys(keys);
-    } catch (err: any) {
-      setError(err.message || 'Failed to create API key.');
+    } catch (err) {
+      const errorVal = err as Error;
+      setError(errorVal.message || 'Failed to create API key.');
     } finally {
       setGeneratingKey(false);
     }
@@ -147,8 +153,9 @@ export default function SettingsPage() {
         method: 'DELETE',
       });
       setApiKeys(apiKeys.filter((k) => k.id !== id));
-    } catch (err: any) {
-      alert(err.message || 'Failed to revoke API key.');
+    } catch (err) {
+      const errorVal = err as Error;
+      alert(errorVal.message || 'Failed to revoke API key.');
     }
   };
 
@@ -163,8 +170,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Get active API key for default code snippet
-  const activeKeyDisplay = apiKeys[0] ? `${apiKeys[0].keyPrefix}************************` : 'YOUR_API_KEY';
+
 
   const embedCode = `<!-- GroundedDesk Chat Widget -->
 <script
@@ -319,7 +325,7 @@ export default function SettingsPage() {
               <select
                 id="position"
                 value={widgetPosition}
-                onChange={(e) => setWidgetPosition(e.target.value as any)}
+                onChange={(e) => setWidgetPosition(e.target.value as 'bottom-right' | 'bottom-left')}
                 className="px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/10 text-white text-xs"
               >
                 <option value="bottom-right">Bottom Right</option>

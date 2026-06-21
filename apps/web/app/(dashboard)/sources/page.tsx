@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiRequest, getToken } from '../../lib/api';
 import {
   Database,
@@ -44,23 +44,26 @@ export default function SourcesPage() {
   const [crawling, setCrawling] = useState(false);
   const [crawlError, setCrawlError] = useState('');
 
-  const loadSources = async () => {
+  const loadSources = useCallback(async () => {
     try {
       const data = await apiRequest('/knowledge');
       setSources(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch knowledge sources.');
+    } catch (err) {
+      const errorVal = err as Error;
+      setError(errorVal.message || 'Failed to fetch knowledge sources.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadSources();
+    Promise.resolve().then(() => {
+      loadSources();
+    });
     // Poll sources every 5 seconds to track background workers processing uploads
     const interval = setInterval(loadSources, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadSources]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -105,8 +108,9 @@ export default function SourcesPage() {
       if (fileInput) fileInput.value = '';
 
       await loadSources();
-    } catch (err: any) {
-      setUploadError(err.message || 'Failed to upload source file.');
+    } catch (err) {
+      const errorVal = err as Error;
+      setUploadError(errorVal.message || 'Failed to upload source file.');
     } finally {
       setUploading(false);
     }
@@ -131,8 +135,9 @@ export default function SourcesPage() {
       setCrawlUrl('');
       setCrawlName('');
       await loadSources();
-    } catch (err: any) {
-      setCrawlError(err.message || 'Failed to start URL crawling.');
+    } catch (err) {
+      const errorVal = err as Error;
+      setCrawlError(errorVal.message || 'Failed to start URL crawling.');
     } finally {
       setCrawling(false);
     }
@@ -148,8 +153,9 @@ export default function SourcesPage() {
         method: 'DELETE',
       });
       setSources(sources.filter((s) => s.id !== id));
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete source.');
+    } catch (err) {
+      const errorVal = err as Error;
+      alert(errorVal.message || 'Failed to delete source.');
     }
   };
 
@@ -190,6 +196,13 @@ export default function SourcesPage() {
         <h1 className="text-2xl font-bold text-white tracking-tight">Knowledge Base</h1>
         <p className="text-sm text-slate-400 mt-1">Upload files or crawl URLs to inject knowledge into the model</p>
       </div>
+
+      {error && (
+        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-200 text-xs rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* Grid Inputs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

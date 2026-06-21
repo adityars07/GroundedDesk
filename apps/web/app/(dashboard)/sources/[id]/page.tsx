@@ -35,7 +35,7 @@ interface Chunk {
   id: string;
   content: string;
   tokenCount: number;
-  metadata: any;
+  metadata: Record<string, unknown>;
 }
 
 interface DiffChange {
@@ -97,11 +97,7 @@ export default function SourceDetailPage({ params }: { params: Promise<{ id: str
   const [loadingCompareChunks, setLoadingCompareChunks] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadSourceDetails();
-  }, [id]);
-
-  const loadSourceDetails = async () => {
+  async function loadSourceDetails() {
     try {
       setLoading(true);
       setError('');
@@ -113,36 +109,44 @@ export default function SourceDetailPage({ params }: { params: Promise<{ id: str
 
       // Load history of this source name/url
       loadHistory(id);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load source details.');
+    } catch (err) {
+      const errorVal = err as Error;
+      setError(errorVal.message || 'Failed to load source details.');
       setLoading(false);
     }
-  };
+  }
 
-  const loadChunks = async (sourceId: string) => {
+  async function loadChunks(sourceId: string) {
     try {
       setLoadingChunks(true);
       const res = await apiRequest(`/knowledge/${sourceId}/chunks?page=1&limit=500`);
       setChunks(res.chunks || []);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load chunks:', err);
     } finally {
       setLoadingChunks(false);
       setLoading(false);
     }
-  };
+  }
 
-  const loadHistory = async (sourceId: string) => {
+  async function loadHistory(sourceId: string) {
     try {
       setLoadingHistory(true);
       const data = await apiRequest(`/knowledge/${sourceId}/history`);
       setHistory(data || []);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load history:', err);
     } finally {
       setLoadingHistory(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      loadSourceDetails();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const handleSelectCompare = async (prevSource: KnowledgeSource) => {
     if (prevSource.id === source?.id) {
