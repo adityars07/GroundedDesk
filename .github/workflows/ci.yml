@@ -110,9 +110,10 @@ jobs:
         id: evals
         run: |
           pnpm --filter eval run evaluate 2>&1 | tee eval-results.txt
-          echo "EVAL_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "EVAL_OUTPUT<<$EOF" >> $GITHUB_OUTPUT
           cat eval-results.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         continue-on-error: true   # Evals require a live OpenAI key
