@@ -40,6 +40,10 @@ export class AnthropicProvider implements ILlmProvider {
     return this.openaiProvider.embedQuery(text);
   }
 
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    return this.openaiProvider.embedBatch(texts);
+  }
+
   async streamCompletion(
     systemPrompt: string,
     userMessage: string,

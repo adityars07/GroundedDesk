@@ -64,6 +64,11 @@ export interface ILlmProvider {
   embedQuery(text: string): Promise<number[]>;
 
   /**
+   * Generate dense embedding vectors for a batch of query strings.
+   */
+  embedBatch(texts: string[]): Promise<number[][]>;
+
+  /**
    * Stream a chat completion, yielding text deltas.
    */
   streamCompletion(

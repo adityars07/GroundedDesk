@@ -11,27 +11,27 @@ import {
 import { getAttachmentBase64 } from '../../common/utils/attachment';
 
 /**
- * OpenAI LLM provider.
- * Handles both chat completions (GPT-4o) and embeddings
- * (text-embedding-3-small).  All other providers delegate
- * embed calls back to this one to keep vector-space consistency.
+ * Gemini LLM provider using Google's OpenAI-compatible endpoint.
+ * Handles both chat completions (gemini-1.5-flash) and embeddings (text-embedding-004).
  */
 @Injectable()
-export class OpenAIProvider implements ILlmProvider {
-  readonly providerName = 'openai';
-  private readonly logger = new Logger(OpenAIProvider.name);
+export class GeminiProvider implements ILlmProvider {
+  readonly providerName = 'gemini';
+  private readonly logger = new Logger(GeminiProvider.name);
   private readonly client: OpenAI;
   private readonly chatModel: string;
   private readonly embeddingModel: string;
 
   constructor(private readonly configService: ConfigService) {
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
     this.client = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      apiKey: apiKey || 'dummy-key',
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     });
-    this.chatModel = this.configService.get<string>('OPENAI_CHAT_MODEL', 'gpt-4o');
+    this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
     this.embeddingModel = this.configService.get<string>(
-      'OPENAI_EMBEDDING_MODEL',
-      'text-embedding-3-small',
+      'GEMINI_EMBEDDING_MODEL',
+      'text-embedding-004',
     );
   }
 

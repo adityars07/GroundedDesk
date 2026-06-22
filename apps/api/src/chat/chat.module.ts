@@ -5,6 +5,7 @@ import { RetrievalService } from './retrieval.service';
 import { LlmService } from './llm.service';
 import { OpenAIProvider } from './providers/openai.provider';
 import { AnthropicProvider } from './providers/anthropic.provider';
+import { GeminiProvider } from './providers/gemini.provider';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { AuthModule } from '../auth/auth.module';
 import { GuardrailModule } from '../guardrail/guardrail.module';
@@ -22,6 +23,7 @@ import { MockCrmController } from './tools/mock-crm.controller';
     // LLM providers (order matters: AnthropicProvider depends on OpenAIProvider)
     OpenAIProvider,
     AnthropicProvider,
+    GeminiProvider,
     // Orchestrator and services
     LlmService,
     RetrievalService,

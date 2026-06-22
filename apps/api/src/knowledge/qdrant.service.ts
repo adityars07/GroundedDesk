@@ -2,19 +2,20 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QdrantClient } from '@qdrant/js-client-rest';
 
-const COLLECTION_NAME = 'groundeddesk_chunks';
-const VECTOR_SIZE = 1536; // text-embedding-3-small dimensions
-
 @Injectable()
 export class QdrantService implements OnModuleInit {
   private readonly logger = new Logger(QdrantService.name);
   private client: QdrantClient;
+  private readonly collectionName: string;
+  private readonly vectorSize: number;
 
   constructor(private readonly configService: ConfigService) {
     this.client = new QdrantClient({
       host: this.configService.get<string>('QDRANT_HOST', 'localhost'),
       port: this.configService.get<number>('QDRANT_PORT', 6333),
     });
+    this.vectorSize = Number(this.configService.get('VECTOR_SIZE', 1536));
+    this.collectionName = `groundeddesk_chunks_${this.vectorSize}`;
   }
 
   async onModuleInit() {
@@ -28,18 +29,18 @@ export class QdrantService implements OnModuleInit {
   private async ensureCollection() {
     try {
       const collections = await this.client.getCollections();
-      const exists = collections.collections.some((c) => c.name === COLLECTION_NAME);
+      const exists = collections.collections.some((c) => c.name === this.collectionName);
 
       if (!exists) {
-        await this.client.createCollection(COLLECTION_NAME, {
+        await this.client.createCollection(this.collectionName, {
           vectors: {
-            size: VECTOR_SIZE,
+            size: this.vectorSize,
             distance: 'Cosine',
           },
         });
 
         // Create payload index on tenant_id for fast filtering
-        await this.client.createPayloadIndex(COLLECTION_NAME, {
+        await this.client.createPayloadIndex(this.collectionName, {
           field_name: 'tenant_id',
           field_schema: {
             type: 'keyword',
@@ -48,14 +49,14 @@ export class QdrantService implements OnModuleInit {
         });
 
         // Create payload index on source_id for deletion
-        await this.client.createPayloadIndex(COLLECTION_NAME, {
+        await this.client.createPayloadIndex(this.collectionName, {
           field_name: 'source_id',
           field_schema: 'keyword',
         });
 
-        this.logger.log(`Created Qdrant collection: ${COLLECTION_NAME}`);
+        this.logger.log(`Created Qdrant collection: ${this.collectionName}`);
       } else {
-        this.logger.log(`Qdrant collection already exists: ${COLLECTION_NAME}`);
+        this.logger.log(`Qdrant collection already exists: ${this.collectionName}`);
       }
     } catch (error) {
       this.logger.warn(`Failed to initialize Qdrant collection: ${error}`);
@@ -79,7 +80,7 @@ export class QdrantService implements OnModuleInit {
       };
     }>,
   ) {
-    await this.client.upsert(COLLECTION_NAME, {
+    await this.client.upsert(this.collectionName, {
       wait: true,
       points,
     });
@@ -93,7 +94,7 @@ export class QdrantService implements OnModuleInit {
     vector: number[],
     limit: number = 5,
   ) {
-    return this.client.search(COLLECTION_NAME, {
+    return this.client.search(this.collectionName, {
       vector,
       limit,
       filter: {
@@ -112,7 +113,7 @@ export class QdrantService implements OnModuleInit {
    * Delete vectors by their IDs.
    */
   async deleteVectors(ids: string[]) {
-    await this.client.delete(COLLECTION_NAME, {
+    await this.client.delete(this.collectionName, {
       wait: true,
       points: ids,
     });
@@ -122,7 +123,7 @@ export class QdrantService implements OnModuleInit {
    * Delete all vectors for a specific source.
    */
   async deleteBySource(sourceId: string) {
-    await this.client.delete(COLLECTION_NAME, {
+    await this.client.delete(this.collectionName, {
       wait: true,
       filter: {
         must: [

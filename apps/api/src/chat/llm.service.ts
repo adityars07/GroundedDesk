@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAIProvider } from './providers/openai.provider';
 import { AnthropicProvider } from './providers/anthropic.provider';
+import { GeminiProvider } from './providers/gemini.provider';
 import { ILlmProvider, LlmStreamResult, ConversationTurn, StreamCompletionOptions } from './providers/llm-provider.interface';
 import { RetrievedChunk } from './retrieval.service';
 
@@ -14,6 +15,7 @@ const PROVIDER_COSTS: Record<string, { input: number; output: number }> = {
   'gpt-4o-mini':                  { input: 0.00000015, output: 0.0000006 },
   'claude-3-5-sonnet-20241022':   { input: 0.000003,   output: 0.000015  },
   'claude-3-haiku-20240307':      { input: 0.00000025, output: 0.00000125 },
+  'gemini-1.5-flash':             { input: 0.000000075, output: 0.0000003 }, // Cost estimated for Gemini 1.5 Flash
 };
 
 /** Compute cost in USD given a model name and usage. */
@@ -29,7 +31,7 @@ export function computeTokenCost(
 /**
  * LlmService — provider-agnostic orchestrator.
  *
- * Reads tenant settings to pick the primary provider (openai | anthropic).
+ * Reads tenant settings to pick the primary provider (openai | anthropic | gemini).
  * On error (rate-limit, 5xx, network), falls back to the fallback provider
  * if configured, then throws.
  *
@@ -48,10 +50,12 @@ export class LlmService {
     private readonly configService: ConfigService,
     private readonly openaiProvider: OpenAIProvider,
     private readonly anthropicProvider: AnthropicProvider,
+    private readonly geminiProvider: GeminiProvider,
   ) {
     this.providers = new Map<string, ILlmProvider>([
       ['openai', this.openaiProvider],
       ['anthropic', this.anthropicProvider],
+      ['gemini', this.geminiProvider],
     ]);
 
     this.defaultPrimary = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
@@ -60,11 +64,17 @@ export class LlmService {
   }
 
   // ---------------------------------------------------------------------------
-  // Embedding — always OpenAI for vector-space consistency
+  // Embedding — dynamic based on configured primary provider
   // ---------------------------------------------------------------------------
 
   async embedQuery(query: string): Promise<number[]> {
-    return this.openaiProvider.embedQuery(query);
+    const provider = this.resolveProvider(this.defaultPrimary);
+    return provider.embedQuery(query);
+  }
+
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    const provider = this.resolveProvider(this.defaultPrimary);
+    return provider.embedBatch(texts);
   }
 
   // ---------------------------------------------------------------------------

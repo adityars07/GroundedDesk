@@ -23,13 +23,26 @@ export class EmbedProcessor extends WorkerHost {
     private readonly configService: ConfigService,
   ) {
     super();
-    this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-    });
-    this.embeddingModel = this.configService.get<string>(
-      'OPENAI_EMBEDDING_MODEL',
-      'text-embedding-3-small',
-    );
+    const primaryProvider = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
+    if (primaryProvider === 'gemini') {
+      const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+      this.openai = new OpenAI({
+        apiKey: apiKey || 'dummy-key',
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
+      this.embeddingModel = this.configService.get<string>(
+        'GEMINI_EMBEDDING_MODEL',
+        'text-embedding-004',
+      );
+    } else {
+      this.openai = new OpenAI({
+        apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      });
+      this.embeddingModel = this.configService.get<string>(
+        'OPENAI_EMBEDDING_MODEL',
+        'text-embedding-3-small',
+      );
+    }
   }
 
   async process(job: Job<EmbedJobData>): Promise<void> {
@@ -106,7 +119,9 @@ export class EmbedProcessor extends WorkerHost {
       });
 
       // Log embedding cost
-      const costPerToken = 0.00000002; // $0.02 per 1M tokens for text-embedding-3-small
+      const costPerToken = this.configService.get<string>('LLM_PRIMARY_PROVIDER') === 'gemini'
+        ? 0.00000005 // $0.05 per 1M tokens for text-embedding-004
+        : 0.00000002; // $0.02 per 1M tokens for text-embedding-3-small
       await this.prisma.costLog.create({
         data: {
           tenantId,
