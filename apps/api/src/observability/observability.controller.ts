@@ -1,8 +1,9 @@
-import { Controller, Get, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { TenantAwarePrismaService } from '../prisma/tenant-aware-prisma.service';
 import { CostTrackerService } from './cost-tracker.service';
+import { GapAnalyzerService } from './gap-analyzer.service';
 
 @Controller('observability')
 @UseGuards(JwtAuthGuard)
@@ -10,6 +11,7 @@ export class ObservabilityController {
   constructor(
     private readonly tenantAwarePrisma: TenantAwarePrismaService,
     private readonly costTracker: CostTrackerService,
+    private readonly gapAnalyzer: GapAnalyzerService,
   ) {}
 
   /**
@@ -95,5 +97,33 @@ export class ObservabilityController {
         p99: getPercentile(99),
       };
     });
+  }
+
+  /**
+   * Get all clustered knowledge gaps for this tenant.
+   */
+  @Get('gaps')
+  async getGaps(@CurrentUser() user: any) {
+    const tenant = await this.tenantAwarePrisma.withTenantScope(async (prisma) => {
+      return prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+      });
+    });
+
+    const settings = (tenant?.settings as any) || {};
+    if (settings.knowledgeGaps && settings.knowledgeGaps.length > 0) {
+      return settings.knowledgeGaps;
+    }
+
+    // Force run an initial analysis if none exist
+    return this.gapAnalyzer.analyzeGaps(user.tenantId);
+  }
+
+  /**
+   * Force a fresh gap analysis and update the cached list.
+   */
+  @Post('gaps/analyze')
+  async triggerAnalysis(@CurrentUser() user: any) {
+    return this.gapAnalyzer.analyzeGaps(user.tenantId);
   }
 }

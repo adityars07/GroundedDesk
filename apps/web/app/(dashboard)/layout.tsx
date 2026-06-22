@@ -16,6 +16,7 @@ import {
   User,
   ChevronDown,
   Headphones,
+  Sparkles,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -57,6 +58,7 @@ export default function DashboardLayout({
   const navItems = [
     { name: 'Overview', href: '/', icon: LayoutDashboard },
     { name: 'Knowledge Base', href: '/sources', icon: Database },
+    { name: 'Knowledge Gaps', href: '/observability/gaps', icon: Sparkles },
     { name: 'Conversations', href: '/conversations', icon: MessageSquare },
     { name: 'Agent Inbox', href: '/agent', icon: Headphones },
     { name: 'Observability', href: '/observability', icon: Activity },
