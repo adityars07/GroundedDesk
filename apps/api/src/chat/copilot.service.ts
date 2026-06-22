@@ -4,22 +4,34 @@ import { Server } from 'socket.io';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma/prisma.service';
 import { RetrievalService } from './retrieval.service';
-import { OpenAIProvider } from './providers/openai.provider';
+import { LlmService } from './llm.service';
 
 @Injectable()
 export class CopilotService {
   private readonly logger = new Logger(CopilotService.name);
   private readonly openai: OpenAI;
+  private readonly chatModel: string;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly retrievalService: RetrievalService,
-    private readonly openaiProvider: OpenAIProvider,
+    private readonly llmService: LlmService,
   ) {
-    this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-    });
+    const primaryProvider = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
+    if (primaryProvider === 'gemini') {
+      const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+      this.openai = new OpenAI({
+        apiKey: apiKey || 'dummy-key',
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
+      this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
+    } else {
+      this.openai = new OpenAI({
+        apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      });
+      this.chatModel = this.configService.get<string>('OPENAI_CHAT_MODEL', 'gpt-4o-mini');
+    }
   }
 
   async generateSuggestions(
@@ -39,7 +51,7 @@ export class CopilotService {
         .join('\n');
 
       // 2. Fetch context via RAG
-      const queryEmbedding = await this.openaiProvider.embedQuery(customerQuery);
+      const queryEmbedding = await this.llmService.embedQuery(customerQuery);
       const rawChunks = await this.retrievalService.retrieve(
         history[0]?.tenantId || '',
         queryEmbedding,
@@ -71,7 +83,7 @@ ${customerQuery}`;
 
       // 4. Query OpenAI
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: this.chatModel,
         messages: [
           { role: 'system', content: systemPrompt },
         ],

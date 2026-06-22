@@ -21,10 +21,25 @@ export class InjectionFilter {
     /print\s+the\s+preceding\s+text/i,
   ];
 
+  private chatModel: string;
+
   constructor(private readonly configService: ConfigService) {
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    if (apiKey) {
-      this.openai = new OpenAI({ apiKey });
+    const primaryProvider = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
+    if (primaryProvider === 'gemini') {
+      const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+      if (apiKey) {
+        this.openai = new OpenAI({
+          apiKey,
+          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        });
+      }
+      this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
+    } else {
+      const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+      if (apiKey) {
+        this.openai = new OpenAI({ apiKey });
+      }
+      this.chatModel = this.configService.get<string>('OPENAI_CHAT_MODEL', 'gpt-4o-mini');
     }
   }
 
@@ -49,7 +64,7 @@ export class InjectionFilter {
     // 2. Lightweight LLM classifier fallback
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: this.chatModel,
         messages: [
           {
             role: 'system',
