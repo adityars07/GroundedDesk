@@ -42,7 +42,7 @@ cp .env.example apps/api/.env
 # Evaluation Suite
 cp .env.example eval/.env
 ```
-Fill in the `OPENAI_API_KEY` and other credentials inside the `.env` files.
+Fill in the `GEMINI_API_KEY` and other credentials inside the `.env` files.
 
 ### Database Migrations & Seeding
 Apply database migrations and run the Acme Coffee Co. demo seed script:

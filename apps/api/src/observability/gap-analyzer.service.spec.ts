@@ -42,15 +42,11 @@ describe('GapAnalyzerService', () => {
     llmService = module.get<LlmService>(LlmService);
   });
 
-  it('should return mock gaps if no low-confidence messages exist', async () => {
+  it('should return empty list if no low-confidence messages exist', async () => {
     jest.spyOn(prisma.message, 'findMany').mockResolvedValue([]);
-    jest.spyOn(prisma.tenant, 'findUnique').mockResolvedValue({ id: 'tenant-1', settings: {} } as any);
-    const updateSpy = jest.spyOn(prisma.tenant, 'update').mockResolvedValue({} as any);
 
     const gaps = await service.analyzeGaps('tenant-1');
-    expect(gaps).toHaveLength(3);
-    expect(gaps[0].topic).toBe('Corporate Gifting & Bulk Discounts');
-    expect(updateSpy).toHaveBeenCalled();
+    expect(gaps).toHaveLength(0);
   });
 
   it('should cluster questions and update tenant settings via LLM when low-confidence messages exist', async () => {
@@ -87,8 +83,8 @@ describe('GapAnalyzerService', () => {
     jest.spyOn(llmService, 'streamCompletion').mockResolvedValue({
       stream: mockStream(),
       getUsage: jest.fn().mockResolvedValue({ promptTokens: 10, completionTokens: 10, totalTokens: 20 }),
-      providerName: 'openai',
-      modelName: 'gpt-4o',
+      providerName: 'gemini',
+      modelName: 'gemini-1.5-flash',
     } as any);
 
     const updateSpy = jest.spyOn(prisma.tenant, 'update').mockResolvedValue({} as any);

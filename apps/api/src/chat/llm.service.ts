@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OpenAIProvider } from './providers/openai.provider';
-import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
 import { ILlmProvider, LlmStreamResult, ConversationTurn, StreamCompletionOptions } from './providers/llm-provider.interface';
 import { RetrievedChunk } from './retrieval.service';
@@ -11,10 +9,6 @@ export type { LlmStreamResult };
 
 /** Per-provider token cost rates (USD per token). */
 const PROVIDER_COSTS: Record<string, { input: number; output: number }> = {
-  'gpt-4o':                       { input: 0.0000025,  output: 0.00001   },
-  'gpt-4o-mini':                  { input: 0.00000015, output: 0.0000006 },
-  'claude-3-5-sonnet-20241022':   { input: 0.000003,   output: 0.000015  },
-  'claude-3-haiku-20240307':      { input: 0.00000025, output: 0.00000125 },
   'gemini-1.5-flash':             { input: 0.000000075, output: 0.0000003 }, // Cost estimated for Gemini 1.5 Flash
 };
 
@@ -24,71 +18,47 @@ export function computeTokenCost(
   promptTokens: number,
   completionTokens: number,
 ): number {
-  const rates = PROVIDER_COSTS[modelName] ?? { input: 0.000003, output: 0.000015 };
+  const rates = PROVIDER_COSTS[modelName] ?? { input: 0.000000075, output: 0.0000003 };
   return promptTokens * rates.input + completionTokens * rates.output;
 }
 
 /**
  * LlmService — provider-agnostic orchestrator.
  *
- * Reads tenant settings to pick the primary provider (openai | anthropic | gemini).
- * On error (rate-limit, 5xx, network), falls back to the fallback provider
- * if configured, then throws.
- *
- * Non-streaming helpers (buildSystemPrompt, extractConfidence, cleanResponse)
- * are provider-independent and live here.
+ * Uses GeminiProvider exclusively.
  */
 @Injectable()
 export class LlmService {
   private readonly logger = new Logger(LlmService.name);
 
-  private readonly providers: Map<string, ILlmProvider>;
-  private readonly defaultPrimary: string;
-  private readonly defaultFallback: string | null;
-
   constructor(
     private readonly configService: ConfigService,
-    private readonly openaiProvider: OpenAIProvider,
-    private readonly anthropicProvider: AnthropicProvider,
     private readonly geminiProvider: GeminiProvider,
-  ) {
-    this.providers = new Map<string, ILlmProvider>([
-      ['openai', this.openaiProvider],
-      ['anthropic', this.anthropicProvider],
-      ['gemini', this.geminiProvider],
-    ]);
-
-    this.defaultPrimary = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
-    const fallbackEnv = this.configService.get<string>('LLM_FALLBACK_PROVIDER', '');
-    this.defaultFallback = fallbackEnv || null;
-  }
+  ) {}
 
   // ---------------------------------------------------------------------------
-  // Embedding — dynamic based on configured primary provider
+  // Embedding — Gemini exclusively
   // ---------------------------------------------------------------------------
 
   async embedQuery(query: string): Promise<number[]> {
-    const provider = this.resolveProvider(this.defaultPrimary);
-    return provider.embedQuery(query);
+    return this.geminiProvider.embedQuery(query);
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    const provider = this.resolveProvider(this.defaultPrimary);
-    return provider.embedBatch(texts);
+    return this.geminiProvider.embedBatch(texts);
   }
 
   // ---------------------------------------------------------------------------
-  // Completion — provider-aware with fallback
+  // Completion — Gemini exclusively
   // ---------------------------------------------------------------------------
 
   /**
-   * Stream a completion using the tenant's preferred provider.
-   * Falls back to the secondary provider if the primary throws.
+   * Stream a completion using Gemini.
    *
    * @param systemPrompt   The fully assembled system prompt (with context).
    * @param userMessage    The redacted user query.
    * @param history        Prior conversation turns.
-   * @param tenantSettings Optional tenant settings object with llmProvider / fallbackProvider.
+   * @param tenantSettings Optional tenant settings (ignored as Gemini is exclusive).
    */
   async streamCompletion(
     systemPrompt: string,
@@ -97,28 +67,8 @@ export class LlmService {
     tenantSettings?: any,
     options?: StreamCompletionOptions,
   ): Promise<LlmStreamResult> {
-    const primaryKey: string = tenantSettings?.llmProvider ?? this.defaultPrimary;
-    const fallbackKey: string | null = tenantSettings?.fallbackProvider ?? this.defaultFallback;
-
-    const primary = this.resolveProvider(primaryKey);
-
-    try {
-      const result = await primary.streamCompletion(systemPrompt, userMessage, history, options);
-      this.logger.log(`Using primary provider: ${primaryKey}`);
-      return result;
-    } catch (primaryErr: any) {
-      this.logger.warn(
-        `Primary provider "${primaryKey}" failed (${primaryErr?.message}). Trying fallback...`,
-      );
-
-      if (!fallbackKey || fallbackKey === primaryKey) {
-        throw primaryErr;
-      }
-
-      const fallback = this.resolveProvider(fallbackKey);
-      this.logger.log(`Falling back to provider: ${fallbackKey}`);
-      return fallback.streamCompletion(systemPrompt, userMessage, history, options);
-    }
+    this.logger.log('Streaming completion using GeminiProvider');
+    return this.geminiProvider.streamCompletion(systemPrompt, userMessage, history, options);
   }
 
   // ---------------------------------------------------------------------------
@@ -166,18 +116,5 @@ WELCOME MESSAGE (use only for greetings): ${welcomeMsg}`;
    */
   cleanResponse(response: string): string {
     return response.replace(/\[CONFIDENCE:\s*[\d.]+\]/gi, '').trim();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
-  private resolveProvider(key: string): ILlmProvider {
-    const provider = this.providers.get(key);
-    if (!provider) {
-      this.logger.warn(`Unknown LLM provider "${key}", defaulting to openai`);
-      return this.openaiProvider;
-    }
-    return provider;
   }
 }

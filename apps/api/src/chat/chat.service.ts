@@ -130,8 +130,8 @@ export class ChatService {
 
     const generation = trace
       ? trace.generation({
-          name: 'openai-completion',
-          model: 'gpt-4o',
+          name: 'gemini-completion',
+          model: 'gemini-1.5-flash',
           input: redactedUserMessage,
         })
       : null;

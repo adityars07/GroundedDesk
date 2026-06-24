@@ -6,11 +6,28 @@ export interface EvalMetricsResult {
   answerRelevance: number;
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 8, delay = 5000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const isTransient = error?.status === 429 || (error?.status >= 500 && error?.status <= 504);
+    if (isTransient && retries > 0) {
+      console.warn(`[Evaluator] Transient error (${error?.status}). Retrying in ${delay}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 1.5);
+    }
+    throw error;
+  }
+}
+
 export class MetricsEvaluator {
   private openai: OpenAI;
 
   constructor(apiKey: string) {
-    this.openai = new OpenAI({ apiKey });
+    this.openai = new OpenAI({
+      apiKey,
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    });
   }
 
   /**
@@ -21,8 +38,8 @@ export class MetricsEvaluator {
     context: string,
   ): Promise<number> {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await withRetry(() => this.openai.chat.completions.create({
+        model: 'models/gemini-2.5-flash',
         messages: [
           {
             role: 'system',
@@ -49,7 +66,7 @@ Do not write any other explanations or introductory text.`,
         ],
         temperature: 0,
         response_format: { type: 'json_object' },
-      });
+      }));
 
       const result = JSON.parse(response.choices[0]?.message?.content || '{}');
       return result.score !== undefined ? Math.min(Math.max(result.score, 0), 1) : 0.5;
@@ -73,8 +90,8 @@ Do not write any other explanations or introductory text.`,
       let relevantCount = 0;
 
       for (const chunk of chunks) {
-        const response = await this.openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+        const response = await withRetry(() => this.openai.chat.completions.create({
+          model: 'models/gemini-2.5-flash',
           messages: [
             {
               role: 'system',
@@ -88,7 +105,7 @@ Respond ONLY with "YES" or "NO". Do not include punctuation or other text.`,
           ],
           temperature: 0,
           max_tokens: 5,
-        });
+        }));
 
         const classification = response.choices[0]?.message?.content?.trim().toUpperCase() || 'NO';
         if (classification === 'YES') {
@@ -111,8 +128,8 @@ Respond ONLY with "YES" or "NO". Do not include punctuation or other text.`,
     answer: string,
   ): Promise<number> {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await withRetry(() => this.openai.chat.completions.create({
+        model: 'models/gemini-2.5-flash',
         messages: [
           {
             role: 'system',
@@ -134,7 +151,7 @@ Do not write any other explanations or introductory text.`,
         ],
         temperature: 0,
         response_format: { type: 'json_object' },
-      });
+      }));
 
       const result = JSON.parse(response.choices[0]?.message?.content || '{}');
       return result.score !== undefined ? Math.min(Math.max(result.score, 0), 1) : 0.5;

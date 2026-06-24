@@ -3,8 +3,6 @@ import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { RetrievalService } from './retrieval.service';
 import { LlmService } from './llm.service';
-import { OpenAIProvider } from './providers/openai.provider';
-import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { AuthModule } from '../auth/auth.module';
@@ -20,9 +18,6 @@ import { MockCrmController } from './tools/mock-crm.controller';
   imports: [KnowledgeModule, AuthModule, GuardrailModule, forwardRef(() => AgentModule), BillingModule],
   controllers: [ChatController, MockCrmController],
   providers: [
-    // LLM providers (order matters: AnthropicProvider depends on OpenAIProvider)
-    OpenAIProvider,
-    AnthropicProvider,
     GeminiProvider,
     // Orchestrator and services
     LlmService,

@@ -64,8 +64,8 @@ export class GapAnalyzerService implements OnModuleInit {
     });
 
     if (assistantMessages.length === 0) {
-      this.logger.log(`No low-confidence messages in database for tenant ${tenantId}. Returning mock gaps.`);
-      return this.getMockGaps(tenantId);
+      this.logger.log(`No low-confidence messages in database for tenant ${tenantId}.`);
+      return [];
     }
 
     // 2. Fetch corresponding USER messages (queries) preceding those assistant messages
@@ -89,8 +89,8 @@ export class GapAnalyzerService implements OnModuleInit {
     const uniqueQueries = Array.from(new Set(userQueries)).filter((q) => q.length > 5);
 
     if (uniqueQueries.length === 0) {
-      this.logger.log(`No unique queries extracted for low-confidence assistant messages. Returning mock gaps.`);
-      return this.getMockGaps(tenantId);
+      this.logger.log(`No unique queries extracted for low-confidence assistant messages.`);
+      return [];
     }
 
     // 3. Cluster and classify topics via LLM completion
@@ -146,7 +146,7 @@ Respond ONLY with the raw JSON array. No markdown formatting, no code blocks (do
       }));
     } catch (err) {
       this.logger.error('Failed to parse LLM knowledge gaps analysis output: ' + responseText, err);
-      return this.getMockGaps(tenantId);
+      return [];
     }
 
     // Save gaps back to tenant settings JSON
@@ -165,64 +165,5 @@ Respond ONLY with the raw JSON array. No markdown formatting, no code blocks (do
 
     this.logger.log(`Successfully completed gap analysis with ${gaps.length} topics for tenant: ${tenantId}`);
     return gaps;
-  }
-
-  private async getMockGaps(tenantId: string): Promise<KnowledgeGap[]> {
-    const mockGaps: KnowledgeGap[] = [
-      {
-        id: 'gap-mock-1',
-        topic: 'Corporate Gifting & Bulk Discounts',
-        description: 'Customers are inquiring about custom branding, gift wrapping, and bulk discount rates for large orders (10+ espresso machines). Our current documentation only covers standard retail pricing.',
-        queryCount: 14,
-        sampleQueries: [
-          'Do you offer bulk discounts for corporate holiday gifts?',
-          'Can we get our company logo engraved on the espresso machines?',
-          'What is the lead time for an order of 25 Barista Express units?'
-        ],
-        updatedAt: new Date().toISOString()
-      },
-      {
-        id: 'gap-mock-2',
-        topic: 'International Warranty & Voltage Compatibility',
-        description: 'Queries regarding voltage requirements (110V vs 220V) for international outlets, and whether warranty coverage extends overseas. Our knowledge base currently assumes US domestic operation.',
-        queryCount: 9,
-        sampleQueries: [
-          'Can I use the Barista Express in the UK without a voltage transformer?',
-          'Is the warranty valid if I ship the machine to Singapore?',
-          'Do you sell 220V versions of the coffee maker?'
-        ],
-        updatedAt: new Date().toISOString()
-      },
-      {
-        id: 'gap-mock-3',
-        topic: 'Decaf & Dark Roast Dial-in Guide',
-        description: 'Customers frequently ask for dial-in guides (grind size, extraction timing) specifically for decaf beans or dark oily roasts, which pull differently than standard medium roast coffee beans.',
-        queryCount: 6,
-        sampleQueries: [
-          'What grind setting should I use for Swiss Water decaf?',
-          'My dark roast shots are pulling too fast, how do I adjust?',
-          'Do you have temperature settings for light roast single origin?'
-        ],
-        updatedAt: new Date().toISOString()
-      }
-    ];
-
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    const currentSettings = (tenant?.settings as any) || {};
-
-    if (!currentSettings.knowledgeGaps) {
-      await this.prisma.tenant.update({
-        where: { id: tenantId },
-        data: {
-          settings: {
-            ...currentSettings,
-            knowledgeGaps: mockGaps
-          }
-        }
-      });
-      return mockGaps;
-    }
-
-    return currentSettings.knowledgeGaps;
   }
 }

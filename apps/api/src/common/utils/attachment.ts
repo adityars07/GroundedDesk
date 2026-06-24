@@ -36,7 +36,7 @@ export async function getAttachmentBase64(url: string): Promise<{ data: string; 
     }
   }
 
-  // Normalize image types for Anthropic / OpenAI APIs
+  // Normalize image types for LLM APIs (e.g. Gemini)
   if (mimeType === 'image/jpg') {
     mimeType = 'image/jpeg';
   }

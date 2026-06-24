@@ -47,7 +47,7 @@ describe('GeminiProvider', () => {
             get: jest.fn().mockImplementation((key, defaultValue) => {
               if (key === 'GEMINI_API_KEY') return 'test-gemini-key';
               if (key === 'GEMINI_CHAT_MODEL') return 'gemini-1.5-flash';
-              if (key === 'GEMINI_EMBEDDING_MODEL') return 'text-embedding-004';
+              if (key === 'GEMINI_EMBEDDING_MODEL') return 'gemini-embedding-001';
               return defaultValue;
             }),
           },
@@ -73,8 +73,9 @@ describe('GeminiProvider', () => {
     const result = await provider.embedQuery('test query');
 
     expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      model: 'text-embedding-004',
+      model: 'gemini-embedding-001',
       input: 'test query',
+      dimensions: 768,
     });
     expect(result).toEqual([0.1, 0.2, 0.3]);
   });
@@ -90,8 +91,9 @@ describe('GeminiProvider', () => {
     const result = await provider.embedBatch(['text1', 'text2']);
 
     expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-      model: 'text-embedding-004',
+      model: 'gemini-embedding-001',
       input: ['text1', 'text2'],
+      dimensions: 768,
     });
     expect(result).toEqual([
       [0.1, 0.2],

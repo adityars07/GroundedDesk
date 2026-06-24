@@ -48,18 +48,17 @@ export interface StreamCompletionOptions {
 }
 
 /**
- * Every LLM provider (OpenAI, Anthropic, …) must satisfy this interface.
+ * Every LLM provider (e.g., Gemini) must satisfy this interface.
  * Providers are stateless service classes injected through NestJS DI.
  */
 export interface ILlmProvider {
-  /** Unique string key, e.g. "openai" or "anthropic". */
+  /** Unique string key, e.g. "gemini". */
   readonly providerName: string;
 
   /**
    * Generate a dense embedding vector for a query string.
-   * Embeddings are always sourced from OpenAI (text-embedding-3-small) for
-   * consistency across tenants, so only OpenAIProvider implements this.
-   * Anthropic delegates embedding calls to the injected OpenAIProvider.
+   * Embeddings are sourced from Gemini (gemini-embedding-001 / text-embedding-004)
+   * for consistency across tenants.
    */
   embedQuery(text: string): Promise<number[]>;
 

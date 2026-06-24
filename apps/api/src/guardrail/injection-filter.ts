@@ -5,7 +5,7 @@ import OpenAI from 'openai';
 @Injectable()
 export class InjectionFilter {
   private readonly logger = new Logger(InjectionFilter.name);
-  private openai?: OpenAI;
+  private geminiClient?: OpenAI;
 
   // Common prompt injection attack heuristics
   private readonly regexPatterns = [
@@ -24,23 +24,14 @@ export class InjectionFilter {
   private chatModel: string;
 
   constructor(private readonly configService: ConfigService) {
-    const primaryProvider = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
-    if (primaryProvider === 'gemini') {
-      const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-      if (apiKey) {
-        this.openai = new OpenAI({
-          apiKey,
-          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-        });
-      }
-      this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
-    } else {
-      const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-      if (apiKey) {
-        this.openai = new OpenAI({ apiKey });
-      }
-      this.chatModel = this.configService.get<string>('OPENAI_CHAT_MODEL', 'gpt-4o-mini');
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+    if (apiKey) {
+      this.geminiClient = new OpenAI({
+        apiKey,
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
     }
+    this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
   }
 
   /**
@@ -56,14 +47,14 @@ export class InjectionFilter {
       }
     }
 
-    // If OpenAI API key is missing, skip the LLM check and default to regex heuristics only
-    if (!this.openai) {
+    // If Gemini API key is missing, skip the LLM check and default to regex heuristics only
+    if (!this.geminiClient) {
       return false;
     }
 
     // 2. Lightweight LLM classifier fallback
     try {
-      const response = await this.openai.chat.completions.create({
+      const response = await this.geminiClient.chat.completions.create({
         model: this.chatModel,
         messages: [
           {

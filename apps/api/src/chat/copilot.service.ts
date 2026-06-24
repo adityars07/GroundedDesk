@@ -9,7 +9,7 @@ import { LlmService } from './llm.service';
 @Injectable()
 export class CopilotService {
   private readonly logger = new Logger(CopilotService.name);
-  private readonly openai: OpenAI;
+  private readonly geminiClient: OpenAI;
   private readonly chatModel: string;
 
   constructor(
@@ -18,20 +18,12 @@ export class CopilotService {
     private readonly retrievalService: RetrievalService,
     private readonly llmService: LlmService,
   ) {
-    const primaryProvider = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
-    if (primaryProvider === 'gemini') {
-      const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-      this.openai = new OpenAI({
-        apiKey: apiKey || 'dummy-key',
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-      });
-      this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
-    } else {
-      this.openai = new OpenAI({
-        apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-      });
-      this.chatModel = this.configService.get<string>('OPENAI_CHAT_MODEL', 'gpt-4o-mini');
-    }
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+    this.geminiClient = new OpenAI({
+      apiKey: apiKey || 'dummy-key',
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    });
+    this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
   }
 
   async generateSuggestions(
@@ -81,8 +73,8 @@ ${historyText}
 CUSTOMER'S LATEST QUERY:
 ${customerQuery}`;
 
-      // 4. Query OpenAI
-      const response = await this.openai.chat.completions.create({
+      // 4. Query Gemini
+      const response = await this.geminiClient.chat.completions.create({
         model: this.chatModel,
         messages: [
           { role: 'system', content: systemPrompt },

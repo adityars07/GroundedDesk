@@ -14,7 +14,7 @@ const EMBEDDING_BATCH_SIZE = 100;
 @Processor('embed')
 export class EmbedProcessor extends WorkerHost {
   private readonly logger = new Logger(EmbedProcessor.name);
-  private openai: OpenAI;
+  private geminiClient: OpenAI;
   private embeddingModel: string;
 
   constructor(
@@ -23,26 +23,15 @@ export class EmbedProcessor extends WorkerHost {
     private readonly configService: ConfigService,
   ) {
     super();
-    const primaryProvider = this.configService.get<string>('LLM_PRIMARY_PROVIDER', 'openai');
-    if (primaryProvider === 'gemini') {
-      const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-      this.openai = new OpenAI({
-        apiKey: apiKey || 'dummy-key',
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-      });
-      this.embeddingModel = this.configService.get<string>(
-        'GEMINI_EMBEDDING_MODEL',
-        'text-embedding-004',
-      );
-    } else {
-      this.openai = new OpenAI({
-        apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-      });
-      this.embeddingModel = this.configService.get<string>(
-        'OPENAI_EMBEDDING_MODEL',
-        'text-embedding-3-small',
-      );
-    }
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+    this.geminiClient = new OpenAI({
+      apiKey: apiKey || 'dummy-key',
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    });
+    this.embeddingModel = this.configService.get<string>(
+      'GEMINI_EMBEDDING_MODEL',
+      'gemini-embedding-001',
+    );
   }
 
   async process(job: Job<EmbedJobData>): Promise<void> {
@@ -57,10 +46,11 @@ export class EmbedProcessor extends WorkerHost {
         const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
 
         // Generate embeddings
-        const response = await this.openai.embeddings.create({
+        const response = await this.geminiClient.embeddings.create({
           model: this.embeddingModel,
           input: batch.map((c) => c.content),
-        });
+          dimensions: this.configService.get<number>('VECTOR_SIZE', 768),
+        } as any);
 
         totalTokens += response.usage?.total_tokens || 0;
 
@@ -119,9 +109,7 @@ export class EmbedProcessor extends WorkerHost {
       });
 
       // Log embedding cost
-      const costPerToken = this.configService.get<string>('LLM_PRIMARY_PROVIDER') === 'gemini'
-        ? 0.00000005 // $0.05 per 1M tokens for text-embedding-004
-        : 0.00000002; // $0.02 per 1M tokens for text-embedding-3-small
+      const costPerToken = 0.00000005; // $0.05 per 1M tokens for text-embedding-004
       await this.prisma.costLog.create({
         data: {
           tenantId,

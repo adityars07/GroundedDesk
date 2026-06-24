@@ -49,16 +49,33 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 8, delay = 5000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const isTransient = error?.status === 429 || (error?.status >= 500 && error?.status <= 504);
+    if (isTransient && retries > 0) {
+      console.warn(`[Runner] Transient error (${error?.status}). Retrying in ${delay}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 1.5);
+    }
+    throw error;
+  }
+}
+
 async function run() {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error('Error: OPENAI_API_KEY is not set in environment variables.');
+    console.error('Error: GEMINI_API_KEY is not set in environment variables.');
     process.exit(1);
   }
 
   console.log('=== GroundedDesk RAG Evaluation Harness ===');
-  console.log('Initializing OpenAI client & metrics evaluator...');
-  const openai = new OpenAI({ apiKey });
+  console.log('Initializing Gemini client & metrics evaluator...');
+  const openai = new OpenAI({
+    apiKey,
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  });
   const evaluator = new MetricsEvaluator(apiKey);
 
   // Load datasets
@@ -74,11 +91,13 @@ async function run() {
   // 1. Pre-embed the KB chunks for semantic retrieval
   console.log('Generating embeddings for knowledge base chunks...');
   for (const chunk of kb) {
-    const response = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
+    const response = await withRetry(() => openai.embeddings.create({
+      model: 'models/gemini-embedding-001',
       input: chunk.content,
-    });
+      dimensions: 768,
+    } as any));
     chunk.embedding = response.data[0].embedding;
+    await new Promise((resolve) => setTimeout(resolve, 4000));
   }
 
   const results: any[] = [];
@@ -92,11 +111,13 @@ async function run() {
     console.log(`\n[Test ${i + 1}/${testCases.length}] Query: "${tc.question}"`);
 
     // A. Embed query
-    const queryEmbResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
+    const queryEmbResponse = await withRetry(() => openai.embeddings.create({
+      model: 'models/gemini-embedding-001',
       input: tc.question,
-    });
+      dimensions: 768,
+    } as any));
     const queryEmbedding = queryEmbResponse.data[0].embedding;
+    await new Promise((resolve) => setTimeout(resolve, 4000));
 
     // B. Semantic Retrieval: find top-2 chunks from mock KB
     const scoredChunks = kb.map((chunk) => {
@@ -115,26 +136,29 @@ async function run() {
 
     // C. Generate Answer using RAG pipeline prompt
     console.log('Generating assistant answer...');
-    const chatResponse = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const chatResponse = await withRetry(() => openai.chat.completions.create({
+      model: 'models/gemini-2.5-flash',
       messages: [
         { role: 'system', content: buildSystemPrompt(contextText) },
         { role: 'user', content: tc.question },
       ],
       temperature: 0.1,
-    });
+    }));
 
     const generatedAnswer = chatResponse.choices[0]?.message?.content || '';
     console.log(`Generated Answer: "${generatedAnswer.substring(0, 80)}..."`);
+    await new Promise((resolve) => setTimeout(resolve, 4000));
 
     // D. Evaluate Quality Metrics
     console.log('Running evaluation metrics...');
     const faithfulness = await evaluator.evaluateFaithfulness(generatedAnswer, contextText);
+    await new Promise((resolve) => setTimeout(resolve, 4000));
     const precision = await evaluator.evaluateContextPrecision(
       tc.question,
       retrieved.map((r) => r.chunk.content),
       tc.groundTruth,
     );
+    await new Promise((resolve) => setTimeout(resolve, 4000));
     const relevance = await evaluator.evaluateAnswerRelevance(tc.question, generatedAnswer);
 
     totalFaithfulness += faithfulness;
@@ -154,6 +178,12 @@ async function run() {
     console.log(`- Faithfulness: ${faithfulness.toFixed(2)}`);
     console.log(`- Context Precision: ${precision.toFixed(2)}`);
     console.log(`- Answer Relevance: ${relevance.toFixed(2)}`);
+
+    // Pacing API requests to avoid rate limits
+    if (i < testCases.length - 1) {
+      console.log('Sleeping 4 seconds to pace API requests...');
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+    }
   }
 
   // 3. Print Summary Markdown Report

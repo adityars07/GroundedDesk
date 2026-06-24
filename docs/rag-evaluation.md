@@ -78,10 +78,10 @@ The evaluation suite runs against a curated test dataset matching the seeded **A
 ## 3. How the Evaluator Works
 
 The evaluation runner (`eval/runner.ts`) performs the following steps:
-1. **Pre-embeds** the mock KB chunks using OpenAI `text-embedding-3-small`.
+1. **Pre-embeds** the mock KB chunks using Google Gemini `text-embedding-004` (or `gemini-embedding-001`).
 2. **Retrieves** the top 2 context chunks for each test question using cosine similarity.
-3. **Generates** an answer by feeding the system prompt, context chunks, and user question to the chat model (`gpt-4o`).
-4. **Grades** the response using a custom `MetricsEvaluator` LLM-as-a-judge class (`eval/metrics/evaluator.ts`).
+3. **Generates** an answer by feeding the system prompt, context chunks, and user question to the chat model (`gemini-1.5-flash`).
+4. **Grades** the response using a custom `MetricsEvaluator` LLM-as-a-judge class (`eval/metrics/evaluator.ts`) powered by `gemini-1.5-flash`.
 5. **Generates** a markdown report (`eval/report.md`) outlining the performance metrics.
 
 ---
@@ -89,7 +89,7 @@ The evaluation runner (`eval/runner.ts`) performs the following steps:
 ## 4. Running the Evals
 
 ### Prerequisites
-1. Ensure `OPENAI_API_KEY` is configured in `eval/.env`.
+1. Ensure `GEMINI_API_KEY` is configured in `eval/.env` (or the root `.env`).
 2. Make sure monorepo dependencies are installed.
 
 ### Execute Command

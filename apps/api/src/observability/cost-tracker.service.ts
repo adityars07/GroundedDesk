@@ -7,9 +7,9 @@ export class CostTrackerService {
 
   // Model cost definitions (cost per 1M tokens)
   private readonly modelPricing: Record<string, { prompt: number; completion: number }> = {
-    'gpt-4o': { prompt: 2.5, completion: 10.0 },
-    'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
-    'text-embedding-3-small': { prompt: 0.02, completion: 0 },
+    'gemini-1.5-flash': { prompt: 0.075, completion: 0.3 },
+    'text-embedding-004': { prompt: 0.05, completion: 0 },
+    'gemini-embedding-001': { prompt: 0.025, completion: 0 },
   };
 
   constructor(private readonly prisma: PrismaService) {}

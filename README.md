@@ -27,7 +27,7 @@ sequenceDiagram
     participant Nest as NestJS API Gateway
     participant Guard as Guardrails Module
     participant Qdrant as Qdrant Vector DB
-    participant LLM as OpenAI (GPT-4o)
+    participant LLM as Google Gemini (gemini-1.5-flash)
     participant DB as PostgreSQL (RLS)
     participant Obs as Langfuse (Observability)
 
@@ -40,7 +40,7 @@ sequenceDiagram
         Nest-->>Widget: Emit error (Blocked)
     end
     Nest->>Guard: Redact PII from user query
-    Nest->>LLM: Generate query embedding (text-embedding-3-small)
+    Nest->>LLM: Generate query embedding (gemini-embedding-001)
     LLM-->>Nest: Query vector
     Nest->>Qdrant: Search (restricted by tenant_id payload filter)
     Qdrant-->>Nest: Retrieve top relevance chunks
@@ -68,8 +68,9 @@ sequenceDiagram
 - **Monorepo Engine**: [Turborepo](https://turbo.build/repo) + [pnpm Workspaces](https://pnpm.io/)
 - **Frontend Admin Panel**: Next.js 15 (App Router, Tailwind CSS, shadcn/ui, Recharts, TanStack Query)
 - **Backend API Server**: NestJS 11 (REST API, Socket.io WebSockets, BullMQ background queues)
+- **LLM Engine**: Google Gemini (`gemini-1.5-flash` for completions/guardrails, `gemini-embedding-001` or `text-embedding-004` for embeddings)
 - **Database**: PostgreSQL 16 (Prisma ORM) with Row-Level Security (RLS) Policies
-- **Vector Search Engine**: Qdrant (payload-based keyword multi-tenant isolation)
+- **Vector Search Engine**: Qdrant (payload-based keyword multi-tenant isolation with 768-dimension vectors)
 - **Ingestion Workers**: Redis (BullMQ queue broker) + Cheerio/Mammoth/pdf-parse (crawlers and parsers)
 - **Observability Tracing**: Langfuse + Local Postgres Cost Log Trackers
 - **Authentication**: NextAuth.js v5 (JWT-based session propagation to backend APIs)
@@ -128,7 +129,7 @@ cp .env.example apps/api/.env
 # RAG Eval Harness
 cp .env.example eval/.env
 ```
-*Make sure to open the `.env` files and paste your `OPENAI_API_KEY` for vector search and RAG completions.*
+*Make sure to open the `.env` files and paste your `GEMINI_API_KEY` and set `VECTOR_SIZE=768`.*
 
 ### 5. Run Database Migrations & Seed Data
 Generate Prisma clients, apply SQL Row-Level Security migrations, and seed the demo dataset:

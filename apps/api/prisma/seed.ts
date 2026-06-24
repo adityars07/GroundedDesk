@@ -18,9 +18,9 @@ const TENANT_ID = 'acme-tenant-uuid-1111-2222-3333-444444444444';
 const USER_ID = 'acme-user-uuid-1111-2222-3333-444444444444';
 const API_KEY_ID = 'acme-key-uuid-1111-2222-3333-444444444444';
 const RAW_API_KEY = 'gd_live_acmecoffeedemo1234567890abcdef';
-const COLLECTION_NAME = 'groundeddesk_chunks';
+const COLLECTION_NAME = 'groundeddesk_chunks_768';
 
-function generateMockVector(dimensions = 1536): number[] {
+function generateMockVector(dimensions = 768): number[] {
   const vec = Array.from({ length: dimensions }, () => Math.random() * 2 - 1);
   const magnitude = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0));
   return vec.map((val) => val / magnitude);
@@ -35,7 +35,7 @@ async function ensureQdrantCollection(client: QdrantClient) {
       console.log(`Creating Qdrant collection: ${COLLECTION_NAME}`);
       await client.createCollection(COLLECTION_NAME, {
         vectors: {
-          size: 1536,
+          size: 768,
           distance: 'Cosine',
         },
       });
@@ -77,18 +77,21 @@ async function seed() {
 
   await ensureQdrantCollection(qdrantClient);
 
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const isRealOpenAiKey =
-    openaiKey &&
-    !openaiKey.startsWith('sk-your-openai-api-key') &&
-    openaiKey !== '';
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const isRealGeminiKey =
+    geminiKey &&
+    !geminiKey.startsWith('AIzaSy-placeholder') &&
+    geminiKey !== '';
 
-  let openai: OpenAI | null = null;
-  if (isRealOpenAiKey) {
-    console.log('Valid OpenAI API key detected. Real embeddings will be generated.');
-    openai = new OpenAI({ apiKey: openaiKey });
+  let geminiClient: OpenAI | null = null;
+  if (isRealGeminiKey) {
+    console.log('Valid Gemini API key detected. Real embeddings will be generated.');
+    geminiClient = new OpenAI({
+      apiKey: geminiKey,
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    });
   } else {
-    console.log('No valid OpenAI API key detected. Fallback: generating mock vectors.');
+    console.log('No valid Gemini API key detected. Fallback: generating mock vectors.');
   }
 
   // Bypass RLS in Postgres transaction
@@ -192,15 +195,15 @@ async function seed() {
 
       // Generate Embedding vector
       let vector: number[];
-      if (openai) {
+      if (geminiClient) {
         try {
-          const response = await openai.embeddings.create({
-            model: 'text-embedding-3-small',
+          const response = await geminiClient.embeddings.create({
+            model: 'text-embedding-004',
             input: item.content,
           });
           vector = response.data[0].embedding;
         } catch (e) {
-          console.warn(`Failed to embed via OpenAI, falling back to mock vector: ${e}`);
+          console.warn(`Failed to embed via Gemini, falling back to mock vector: ${e}`);
           vector = generateMockVector();
         }
       } else {
@@ -382,11 +385,11 @@ async function seed() {
       for (let c = 0; c < dailyChats; c++) {
         const promptTokens = Math.floor(Math.random() * 300) + 150;
         const completionTokens = Math.floor(Math.random() * 150) + 50;
-        const chatCost = promptTokens * 0.0000025 + completionTokens * 0.00001;
+        const chatCost = promptTokens * 0.000000075 + completionTokens * 0.0000003;
 
         costLogs.push({
           tenantId: TENANT_ID,
-          model: 'gpt-4o',
+          model: 'gemini-1.5-flash',
           promptTokens,
           completionTokens,
           totalCost: chatCost,
@@ -398,10 +401,10 @@ async function seed() {
       // 1-2 embedding jobs some days
       if (day % 2 === 0) {
         const tokens = Math.floor(Math.random() * 1500) + 500;
-        const embedCost = tokens * 0.00000002;
+        const embedCost = tokens * 0.00000005;
         costLogs.push({
           tenantId: TENANT_ID,
-          model: 'text-embedding-3-small',
+          model: 'text-embedding-004',
           promptTokens: tokens,
           completionTokens: 0,
           totalCost: embedCost,

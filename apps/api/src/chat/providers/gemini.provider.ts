@@ -31,7 +31,7 @@ export class GeminiProvider implements ILlmProvider {
     this.chatModel = this.configService.get<string>('GEMINI_CHAT_MODEL', 'gemini-1.5-flash');
     this.embeddingModel = this.configService.get<string>(
       'GEMINI_EMBEDDING_MODEL',
-      'text-embedding-004',
+      'gemini-embedding-001',
     );
   }
 
@@ -39,7 +39,8 @@ export class GeminiProvider implements ILlmProvider {
     const response = await this.client.embeddings.create({
       model: this.embeddingModel,
       input: text,
-    });
+      dimensions: this.configService.get<number>('VECTOR_SIZE', 768),
+    } as any);
     return response.data[0].embedding;
   }
 
@@ -47,7 +48,8 @@ export class GeminiProvider implements ILlmProvider {
     const response = await this.client.embeddings.create({
       model: this.embeddingModel,
       input: texts,
-    });
+      dimensions: this.configService.get<number>('VECTOR_SIZE', 768),
+    } as any);
     return response.data.map((d) => d.embedding);
   }
 
