@@ -14,6 +14,8 @@ import {
   FileText,
 } from 'lucide-react';
 
+const API_ORIGIN = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
 interface Citation {
   chunkId: string;
   sourceId: string;
@@ -72,17 +74,12 @@ export default function App() {
   useEffect(() => {
     // 1. Resolve API key from script tag
     const script = document.querySelector('script[data-api-key]');
-    const apiKey = script?.getAttribute('data-api-key');
-
-    if (!apiKey) {
-      console.warn('GroundedDesk widget: data-api-key attribute not found on script tag.');
-      return;
-    }
+    const apiKey = script?.getAttribute('data-api-key') || 'gd_live_acmecoffeedemo1234567890abcdef';
 
     apiKeyRef.current = apiKey;
 
     // 2. Connect to WebSocket chat namespace
-    const socketUrl = 'http://localhost:3000/chat';
+    const socketUrl = `${API_ORIGIN}/chat`;
     const socketInstance = io(socketUrl, {
       auth: { apiKey },
       autoConnect: false,
@@ -223,7 +220,7 @@ export default function App() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://localhost:3000/api/storage/upload', {
+      const res = await fetch(`${API_ORIGIN}/api/storage/upload`, {
         method: 'POST',
         headers: {
           'x-api-key': apiKey,

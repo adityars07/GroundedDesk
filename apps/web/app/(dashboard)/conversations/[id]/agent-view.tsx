@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getToken } from '../../../lib/api';
+import { API_ORIGIN, getToken } from '../../../lib/api';
 import { io, Socket } from 'socket.io-client';
 
 interface ChatMessage {
@@ -56,8 +56,7 @@ export default function AgentView({ conversationId, onResolve }: AgentViewProps)
   useEffect(() => {
     if (!token) return;
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-    const socket = io(`${apiUrl}/agent`, {
+    const socket = io(`${API_ORIGIN}/agent`, {
       auth: { token },
       transports: ['websocket'],
     });

@@ -13,6 +13,7 @@ export class QdrantService implements OnModuleInit {
     this.client = new QdrantClient({
       host: this.configService.get<string>('QDRANT_HOST', 'localhost'),
       port: this.configService.get<number>('QDRANT_PORT', 6333),
+      checkCompatibility: false,
     });
     this.vectorSize = Number(this.configService.get('VECTOR_SIZE', 1536));
     this.collectionName = `groundeddesk_chunks_${this.vectorSize}`;

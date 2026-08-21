@@ -30,7 +30,7 @@ export class StorageService {
     // Save locally
     await fs.writeFile(filePath, file.buffer);
 
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:4000';
     const fileUrl = `${apiBaseUrl}/api/storage/uploads/${tenantId}/${uniqueFilename}`;
 
     this.logger.log(`Uploaded file for tenant ${tenantId} saved to ${filePath}, URL: ${fileUrl}`);

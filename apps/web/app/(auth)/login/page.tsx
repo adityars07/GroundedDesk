@@ -34,7 +34,7 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      setToken(data.access_token);
+      setToken(data.token);
       setCurrentUser(data.user);
       router.push('/');
     } catch (err: any) {

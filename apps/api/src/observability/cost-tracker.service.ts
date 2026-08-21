@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantAwarePrismaService } from '../prisma/tenant-aware-prisma.service';
 
 @Injectable()
 export class CostTrackerService {
@@ -12,7 +13,10 @@ export class CostTrackerService {
     'gemini-embedding-001': { prompt: 0.025, completion: 0 },
   };
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantPrisma: TenantAwarePrismaService,
+  ) {}
 
   /**
    * Log LLM operation tokens and calculate cost.
@@ -31,17 +35,19 @@ export class CostTrackerService {
     const totalCost = promptCost + completionCost;
 
     try {
-      await this.prisma.costLog.create({
-        data: {
-          tenantId: options.tenantId,
-          conversationId: options.conversationId,
-          model: options.model,
-          promptTokens: options.promptTokens,
-          completionTokens: options.completionTokens,
-          totalCost,
-          operation: options.operation || 'chat',
-        },
-      });
+      await this.tenantPrisma.withExplicitTenant(options.tenantId, (prisma) =>
+        prisma.costLog.create({
+          data: {
+            tenantId: options.tenantId,
+            conversationId: options.conversationId,
+            model: options.model,
+            promptTokens: options.promptTokens,
+            completionTokens: options.completionTokens,
+            totalCost,
+            operation: options.operation || 'chat',
+          },
+        }),
+      );
     } catch (error) {
       this.logger.error(`Failed to log cost to database: ${error}`);
     }
@@ -53,17 +59,19 @@ export class CostTrackerService {
    * Retrieve total spend for a tenant, optionally filtered by operation.
    */
   async getTotalSpend(tenantId: string, operation?: string): Promise<number> {
-    const aggregate = await this.prisma.costLog.aggregate({
-      where: {
-        tenantId,
-        ...(operation ? { operation } : {}),
-      },
-      _sum: {
-        totalCost: true,
-      },
-    });
+    return this.tenantPrisma.withExplicitTenant(tenantId, async (prisma) => {
+      const aggregate = await prisma.costLog.aggregate({
+        where: {
+          tenantId,
+          ...(operation ? { operation } : {}),
+        },
+        _sum: {
+          totalCost: true,
+        },
+      });
 
-    return aggregate._sum.totalCost || 0;
+      return aggregate._sum.totalCost || 0;
+    });
   }
 
   /**
@@ -73,17 +81,19 @@ export class CostTrackerService {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const logs = await this.prisma.costLog.findMany({
-      where: {
-        tenantId,
-        createdAt: {
-          gte: startDate,
+    const logs = await this.tenantPrisma.withExplicitTenant(tenantId, (prisma) =>
+      prisma.costLog.findMany({
+        where: {
+          tenantId,
+          createdAt: {
+            gte: startDate,
+          },
         },
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    });
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+    );
 
     // Group in JS since Prisma doesn't support easy GROUP BY with dates without raw query
     const dailyMap: Record<string, number> = {};

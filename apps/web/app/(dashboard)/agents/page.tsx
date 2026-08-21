@@ -429,7 +429,7 @@ export default function AgentsPage() {
             </div>
 
             <span className="text-[#9E9CAE] font-medium text-xs uppercase tracking-wider mb-2">Agent Flow</span>
-            <h1 className="text-2xl font-bold text-slate-800 mb-2">Welcome, Thomas 👋</h1>
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">Welcome{(() => { try { const u = JSON.parse(localStorage.getItem('gd_user') || '{}'); return u.name ? `, ${u.name.split(' ')[0]}` : ''; } catch { return ''; } })()} 👋</h1>
             <p className="text-slate-500 text-sm mb-8">
               Let's Create New Agents to automate call handling, customer support, and sales outreach.
             </p>

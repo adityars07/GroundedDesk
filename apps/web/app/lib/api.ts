@@ -1,4 +1,8 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+/** NestJS API origin (no path suffix). */
+export const API_ORIGIN =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, '') || 'http://localhost:4000';
+
+export const API_BASE_URL = `${API_ORIGIN}/api`;
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;

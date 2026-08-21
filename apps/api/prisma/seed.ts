@@ -14,9 +14,9 @@ dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 const prisma = new PrismaClient();
 
-const TENANT_ID = 'acme-tenant-uuid-1111-2222-3333-444444444444';
-const USER_ID = 'acme-user-uuid-1111-2222-3333-444444444444';
-const API_KEY_ID = 'acme-key-uuid-1111-2222-3333-444444444444';
+const TENANT_ID = '11111111-1111-4111-8111-111111111111';
+const USER_ID = '22222222-2222-4222-8222-222222222222';
+const API_KEY_ID = '33333333-3333-4333-8333-333333333333';
 const RAW_API_KEY = 'gd_live_acmecoffeedemo1234567890abcdef';
 const COLLECTION_NAME = 'groundeddesk_chunks_768';
 
@@ -73,6 +73,7 @@ async function seed() {
   const qdrantClient = new QdrantClient({
     host: qdrantHost,
     port: qdrantPort,
+    checkCompatibility: false,
   });
 
   await ensureQdrantCollection(qdrantClient);

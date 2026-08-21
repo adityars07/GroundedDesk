@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantAwarePrismaService } from '../prisma/tenant-aware-prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserRole } from '@prisma/client';
@@ -17,6 +18,7 @@ export interface JwtPayload {
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly tenantPrisma: TenantAwarePrismaService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -25,16 +27,16 @@ export class AuthService {
    * The first user becomes the OWNER of the tenant.
    */
   async register(dto: RegisterDto) {
-    // Check if email already exists (across all tenants)
-    const existing = await this.prisma.user.findFirst({
-      where: { email: dto.email },
-    });
+    const existing = await this.prisma.withBypassRls((prisma) =>
+      prisma.user.findFirst({
+        where: { email: dto.email },
+      }),
+    );
 
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
 
-    // Create tenant + owner user in a single transaction
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
@@ -48,6 +50,11 @@ export class AuthService {
           },
         },
       });
+
+      await tx.$executeRawUnsafe(
+        `SELECT set_config('app.current_tenant', $1, true)`,
+        tenant.id,
+      );
 
       const hashedPassword = await bcrypt.hash(dto.password, 12);
 
@@ -78,10 +85,12 @@ export class AuthService {
    * Authenticate a user with email + password.
    */
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findFirst({
-      where: { email: dto.email },
-      include: { tenant: true },
-    });
+    const user = await this.prisma.withBypassRls((prisma) =>
+      prisma.user.findFirst({
+        where: { email: dto.email },
+        include: { tenant: true },
+      }),
+    );
 
     if (!user || !user.password) {
       throw new UnauthorizedException('Invalid email or password');
@@ -111,13 +120,14 @@ export class AuthService {
     avatar?: string;
     provider: string;
   }) {
-    let user = await this.prisma.user.findFirst({
-      where: { email: profile.email },
-      include: { tenant: true },
-    });
+    let user = await this.prisma.withBypassRls((prisma) =>
+      prisma.user.findFirst({
+        where: { email: profile.email },
+        include: { tenant: true },
+      }),
+    );
 
     if (!user) {
-      // First time — create tenant + user
       const result = await this.prisma.$transaction(async (tx) => {
         const tenant = await tx.tenant.create({
           data: {
@@ -131,6 +141,11 @@ export class AuthService {
             },
           },
         });
+
+        await tx.$executeRawUnsafe(
+          `SELECT set_config('app.current_tenant', $1, true)`,
+          tenant.id,
+        );
 
         const newUser = await tx.user.create({
           data: {
@@ -162,10 +177,12 @@ export class AuthService {
    * Validate JWT payload — called by JwtStrategy.
    */
   async validateJwtPayload(payload: JwtPayload) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      include: { tenant: true },
-    });
+    const user = await this.tenantPrisma.withExplicitTenant(payload.tenantId, (prisma) =>
+      prisma.user.findUnique({
+        where: { id: payload.sub },
+        include: { tenant: true },
+      }),
+    );
 
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -181,8 +198,9 @@ export class AuthService {
   async verifyToken(token: string): Promise<JwtPayload & { name?: string; email?: string }> {
     try {
       const payload = this.jwtService.verify<JwtPayload>(token);
-      // Fetch the user to attach name
-      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+      const user = await this.tenantPrisma.withExplicitTenant(payload.tenantId, (prisma) =>
+        prisma.user.findUnique({ where: { id: payload.sub } }),
+      );
       return { ...payload, name: user?.name ?? undefined, email: user?.email ?? payload.email };
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
@@ -194,29 +212,30 @@ export class AuthService {
    * Returns the tenant associated with the API key.
    */
   async validateApiKey(key: string) {
-    // We need to search by prefix since we store hashed keys
     const prefix = key.substring(0, 16);
 
-    const apiKey = await this.prisma.apiKey.findFirst({
-      where: { keyPrefix: prefix },
-      include: { tenant: true },
-    });
+    const apiKey = await this.prisma.withBypassRls((prisma) =>
+      prisma.apiKey.findFirst({
+        where: { keyPrefix: prefix },
+        include: { tenant: true },
+      }),
+    );
 
     if (!apiKey) {
       throw new UnauthorizedException('Invalid API key');
     }
 
-    // Verify the full key hash
     const isValid = await bcrypt.compare(key, apiKey.keyHash);
     if (!isValid) {
       throw new UnauthorizedException('Invalid API key');
     }
 
-    // Update last used timestamp
-    await this.prisma.apiKey.update({
-      where: { id: apiKey.id },
-      data: { lastUsedAt: new Date() },
-    });
+    await this.tenantPrisma.withExplicitTenant(apiKey.tenantId, (prisma) =>
+      prisma.apiKey.update({
+        where: { id: apiKey.id },
+        data: { lastUsedAt: new Date() },
+      }),
+    );
 
     return apiKey.tenant;
   }
@@ -229,14 +248,16 @@ export class AuthService {
     const keyHash = await bcrypt.hash(rawKey, 10);
     const keyPrefix = rawKey.substring(0, 16);
 
-    const apiKey = await this.prisma.apiKey.create({
-      data: {
-        tenantId,
-        name,
-        keyHash,
-        keyPrefix,
-      },
-    });
+    const apiKey = await this.tenantPrisma.withExplicitTenant(tenantId, (prisma) =>
+      prisma.apiKey.create({
+        data: {
+          tenantId,
+          name,
+          keyHash,
+          keyPrefix,
+        },
+      }),
+    );
 
     // Return the raw key only once — it can't be retrieved later
     return {
@@ -249,85 +270,95 @@ export class AuthService {
   }
 
   async listTeamMembers(tenantId: string) {
-    return this.prisma.user.findMany({
-      where: { tenantId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        avatar: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+    return this.tenantPrisma.withExplicitTenant(tenantId, (prisma) =>
+      prisma.user.findMany({
+        where: { tenantId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          avatar: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
   }
 
   async inviteTeamMember(tenantId: string, dto: { email: string; name?: string; role: UserRole; password?: string }) {
-    const existing = await this.prisma.user.findFirst({
-      where: { email: dto.email },
-    });
+    const existing = await this.prisma.withBypassRls((prisma) =>
+      prisma.user.findFirst({
+        where: { email: dto.email },
+      }),
+    );
     if (existing) {
       throw new ConflictException('A user with this email already exists');
     }
     const defaultPassword = dto.password || 'TemporaryPassword123!';
     const hashedPassword = await bcrypt.hash(defaultPassword, 12);
-    return this.prisma.user.create({
-      data: {
-        tenantId,
-        email: dto.email,
-        name: dto.name,
-        role: dto.role,
-        password: hashedPassword,
-        provider: 'email',
-      },
-    });
+    return this.tenantPrisma.withExplicitTenant(tenantId, (prisma) =>
+      prisma.user.create({
+        data: {
+          tenantId,
+          email: dto.email,
+          name: dto.name,
+          role: dto.role,
+          password: hashedPassword,
+          provider: 'email',
+        },
+      }),
+    );
   }
 
   async updateMemberRole(tenantId: string, userId: string, targetUserId: string, role: UserRole) {
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: targetUserId },
-    });
-    if (!targetUser || targetUser.tenantId !== tenantId) {
-      throw new ConflictException('User not found in this tenant');
-    }
-    if (userId === targetUserId) {
-      throw new ConflictException('You cannot change your own role');
-    }
-    if (targetUser.role === UserRole.OWNER && role !== UserRole.OWNER) {
-      const ownersCount = await this.prisma.user.count({
-        where: { tenantId, role: UserRole.OWNER },
+    return this.tenantPrisma.withExplicitTenant(tenantId, async (prisma) => {
+      const targetUser = await prisma.user.findUnique({
+        where: { id: targetUserId },
       });
-      if (ownersCount <= 1) {
-        throw new ConflictException('Cannot demote the last owner of the workspace');
+      if (!targetUser || targetUser.tenantId !== tenantId) {
+        throw new ConflictException('User not found in this tenant');
       }
-    }
-    return this.prisma.user.update({
-      where: { id: targetUserId },
-      data: { role },
+      if (userId === targetUserId) {
+        throw new ConflictException('You cannot change your own role');
+      }
+      if (targetUser.role === UserRole.OWNER && role !== UserRole.OWNER) {
+        const ownersCount = await prisma.user.count({
+          where: { tenantId, role: UserRole.OWNER },
+        });
+        if (ownersCount <= 1) {
+          throw new ConflictException('Cannot demote the last owner of the workspace');
+        }
+      }
+      return prisma.user.update({
+        where: { id: targetUserId },
+        data: { role },
+      });
     });
   }
 
   async removeTeamMember(tenantId: string, userId: string, targetUserId: string) {
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: targetUserId },
-    });
-    if (!targetUser || targetUser.tenantId !== tenantId) {
-      throw new ConflictException('User not found in this tenant');
-    }
-    if (userId === targetUserId) {
-      throw new ConflictException('You cannot remove yourself');
-    }
-    if (targetUser.role === UserRole.OWNER) {
-      const ownersCount = await this.prisma.user.count({
-        where: { tenantId, role: UserRole.OWNER },
+    return this.tenantPrisma.withExplicitTenant(tenantId, async (prisma) => {
+      const targetUser = await prisma.user.findUnique({
+        where: { id: targetUserId },
       });
-      if (ownersCount <= 1) {
-        throw new ConflictException('Cannot remove the last owner of the workspace');
+      if (!targetUser || targetUser.tenantId !== tenantId) {
+        throw new ConflictException('User not found in this tenant');
       }
-    }
-    return this.prisma.user.delete({
-      where: { id: targetUserId },
+      if (userId === targetUserId) {
+        throw new ConflictException('You cannot remove yourself');
+      }
+      if (targetUser.role === UserRole.OWNER) {
+        const ownersCount = await prisma.user.count({
+          where: { tenantId, role: UserRole.OWNER },
+        });
+        if (ownersCount <= 1) {
+          throw new ConflictException('Cannot remove the last owner of the workspace');
+        }
+      }
+      return prisma.user.delete({
+        where: { id: targetUserId },
+      });
     });
   }
 

@@ -1,8 +1,9 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantAwarePrismaService } from '../prisma/tenant-aware-prisma.service';
 import { RetrievalService, RetrievedChunk } from './retrieval.service';
 import { LlmService, computeTokenCost } from './llm.service';
-import { MessageRole } from '@prisma/client';
+import { MessageRole, PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { InjectionFilter } from '../guardrail/injection-filter';
 import { PiiRedactor } from '../guardrail/pii-redactor';
@@ -30,6 +31,7 @@ export class ChatService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly tenantPrisma: TenantAwarePrismaService,
     private readonly retrievalService: RetrievalService,
     private readonly llmService: LlmService,
     private readonly injectionFilter: InjectionFilter,
@@ -55,6 +57,13 @@ export class ChatService {
     } catch {
       return {};
     }
+  }
+
+  private withTenantDb<T>(
+    tenantId: string,
+    callback: (db: PrismaClient) => Promise<T>,
+  ): Promise<T> {
+    return this.tenantPrisma.withExplicitTenant(tenantId, callback);
   }
 
   /**
